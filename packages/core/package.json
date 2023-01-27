@@ -1,0 +1,10 @@
+{
+  "name": "@qlite/core",
+  "version": "0.0.1",
+  "type": "commonjs",
+  "author": {
+    "name": "CodeHz",
+    "email": "codehz@outlook.com",
+    "url": "https://github.com/CodeHz"
+  }
+}

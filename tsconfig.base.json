@@ -8,13 +8,17 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "importHelpers": true,
-    "target": "es2015",
-    "module": "esnext",
-    "lib": ["es2017", "dom"],
+    "target": "ESNext",
+    "module": "NodeNext",
+    "lib": ["ESNext"],
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
+    "isolatedModules": true,
     "baseUrl": ".",
-    "paths": {}
+    "paths": {
+      "@qlite/cli": ["packages/cli/src/index.ts"],
+      "@qlite/core": ["packages/core/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "tmp"]
 }
