@@ -16,8 +16,13 @@ import {
   GraphQLOutputType,
   GraphQLScalarType,
   GraphQLSchema,
+  InputValueDefinitionNode,
   Kind,
+  ListTypeNode,
+  NamedTypeNode,
   NameNode,
+  NonNullTypeNode,
+  TypeNode,
 } from 'graphql';
 
 const OrderBy = new GraphQLEnumType({
@@ -174,76 +179,25 @@ function generateQuery(
         fields.push({
           kind: Kind.FIELD_DEFINITION,
           name: mkname(name),
-          type: {
-            kind: Kind.NAMED_TYPE,
-            name: mkname(relation.target),
-          },
+          type: AstType.named(relation.target),
         });
       } else if (relation.type === 'array') {
         fields.push({
           kind: Kind.FIELD_DEFINITION,
           name: mkname(name),
-          arguments: [
-            {
-              kind: Kind.INPUT_VALUE_DEFINITION,
-              name: mkname('limit'),
-              type: {
-                kind: Kind.NAMED_TYPE,
-                name: mkname('Int'),
-              },
-            },
-            {
-              kind: Kind.INPUT_VALUE_DEFINITION,
-              name: mkname('offset'),
-              type: {
-                kind: Kind.NAMED_TYPE,
-                name: mkname('Int'),
-              },
-            },
-            {
-              kind: Kind.INPUT_VALUE_DEFINITION,
-              name: mkname('where'),
-              type: {
-                kind: Kind.NAMED_TYPE,
-                name: mkname(relation.target + '_bool_exp'),
-              },
-            },
-            {
-              kind: Kind.INPUT_VALUE_DEFINITION,
-              name: mkname('order_by'),
-              type: {
-                kind: Kind.NAMED_TYPE,
-                name: mkname(relation.target + '_order_by'),
-              },
-            },
-            {
-              kind: Kind.INPUT_VALUE_DEFINITION,
-              name: mkname('distinct_on'),
-              type: {
-                kind: Kind.LIST_TYPE,
-                type: {
-                  kind: Kind.NON_NULL_TYPE,
-                  type: {
-                    kind: Kind.NAMED_TYPE,
-                    name: mkname(relation.target + '_select_column'),
-                  },
-                },
-              },
-            },
-          ],
-          type: {
-            kind: Kind.NON_NULL_TYPE,
-            type: {
+          arguments: generateInputValueDefinitionsAst({
+            limit: AstType.named('Int'),
+            offset: AstType.named('Int'),
+            where: AstType.named(relation.target + '_bool_exp'),
+            order_by: AstType.named(relation.target + '_order_by'),
+            distinct_on: {
               kind: Kind.LIST_TYPE,
-              type: {
-                kind: Kind.NON_NULL_TYPE,
-                type: {
-                  kind: Kind.NAMED_TYPE,
-                  name: mkname(relation.target),
-                },
-              },
+              type: AstType.non_null(
+                AstType.named(relation.target + '_select_column')
+              ),
             },
-          },
+          }),
+          type: AstType.non_null(AstType.list(AstType.named(relation.target))),
         });
       }
     }
@@ -253,6 +207,39 @@ function generateQuery(
       fields,
     });
   }
+}
+
+const AstType = {
+  named(name: string): NamedTypeNode {
+    return {
+      kind: Kind.NAMED_TYPE,
+      name: mkname(name),
+    };
+  },
+  non_null(type: NamedTypeNode | ListTypeNode): NonNullTypeNode {
+    return {
+      kind: Kind.NON_NULL_TYPE,
+      type,
+    };
+  },
+  list(type: TypeNode): ListTypeNode {
+    return {
+      kind: Kind.LIST_TYPE,
+      type,
+    };
+  },
+};
+
+function generateInputValueDefinitionsAst(
+  input: Record<string, TypeNode>
+): InputValueDefinitionNode[] {
+  return Object.entries(input).map(
+    ([k, type]): InputValueDefinitionNode => ({
+      kind: Kind.INPUT_VALUE_DEFINITION,
+      name: mkname(k),
+      type,
+    })
+  );
 }
 
 function getColumns(item: GraphQLObjectType, schema: GraphQLSchema) {
