@@ -204,12 +204,14 @@ function generateQuery(
             order_by: AstType.named(NameMap.order_by(relation.target)),
             distinct_on: {
               kind: Kind.LIST_TYPE,
-              type: AstType.non_null(
+              type: AstType.non_null_list(
                 AstType.named(NameMap.select_column(relation.target))
               ),
             },
           }),
-          type: AstType.non_null(AstType.list(AstType.named(relation.target))),
+          type: AstType.non_null(
+            AstType.non_null_list(AstType.named(relation.target))
+          ),
         });
       }
     }
@@ -239,6 +241,9 @@ const AstType = {
       kind: Kind.LIST_TYPE,
       type,
     };
+  },
+  non_null_list(type: NamedTypeNode | ListTypeNode): ListTypeNode {
+    return AstType.list(AstType.non_null(type));
   },
 };
 
