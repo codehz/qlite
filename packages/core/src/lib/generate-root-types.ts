@@ -110,6 +110,18 @@ function addTypes(
   types[value.name] = value;
 }
 
+const NameMap = {
+  bool_exp(name: string) {
+    return name + '_bool_exp';
+  },
+  order_by(name: string) {
+    return name + '_order_by';
+  },
+  select_column(name: string) {
+    return name + '_select_column';
+  },
+};
+
 function generateQuery(
   entity: { exported: boolean },
   item: GraphQLObjectType,
@@ -118,7 +130,7 @@ function generateQuery(
 ) {
   const columns = getColumns(item, schema);
   const bool_exp: GraphQLInputObjectType = new GraphQLInputObjectType({
-    name: item.name + '_bool_exp',
+    name: NameMap.bool_exp(item.name),
     fields: () => ({
       _and: { type: new GraphQLList(new GraphQLNonNull(bool_exp)) },
       _or: { type: new GraphQLList(new GraphQLNonNull(bool_exp)) },
@@ -130,12 +142,12 @@ function generateQuery(
   });
   addTypes(types, bool_exp);
   const order_by: GraphQLInputObjectType = new GraphQLInputObjectType({
-    name: item.name + '_order_by',
+    name: NameMap.order_by(item.name),
     fields: Object.fromEntries(columns.map((x) => [x.name, { type: OrderBy }])),
   });
   addTypes(types, order_by);
   const select_column: GraphQLEnumType = new GraphQLEnumType({
-    name: item.name + '_select_column',
+    name: NameMap.select_column(item.name),
     values: Object.fromEntries(columns.map((x) => [x.name, {}])),
   });
   addTypes(types, select_column);
@@ -188,12 +200,12 @@ function generateQuery(
           arguments: generateInputValueDefinitionsAst({
             limit: AstType.named('Int'),
             offset: AstType.named('Int'),
-            where: AstType.named(relation.target + '_bool_exp'),
-            order_by: AstType.named(relation.target + '_order_by'),
+            where: AstType.named(NameMap.bool_exp(relation.target)),
+            order_by: AstType.named(NameMap.order_by(relation.target)),
             distinct_on: {
               kind: Kind.LIST_TYPE,
               type: AstType.non_null(
-                AstType.named(relation.target + '_select_column')
+                AstType.named(NameMap.select_column(relation.target))
               ),
             },
           }),
