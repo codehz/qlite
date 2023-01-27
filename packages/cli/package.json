@@ -1,7 +1,7 @@
 {
   "name": "@qlite/cli",
-  "version": "0.0.2",
-  "type": "commonjs",
+  "version": "0.0.3",
+  "type": "module",
   "author": {
     "name": "CodeHz",
     "email": "codehz@outlook.com",
@@ -9,5 +9,6 @@
   },
   "bin": {
     "qlite": "./src/index.js"
-  }
+  },
+  "types": "./src/index.ts"
 }

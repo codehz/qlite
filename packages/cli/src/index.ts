@@ -4,8 +4,8 @@ import {
   GraphQLFile,
   ReadOnlyDatabaseFile,
   OutputStream,
-} from './lib/cli-helper';
-import { inferSchemaFromDatabase } from './lib/infer';
+} from './lib/cli-helper.js';
+import { inferSchemaFromDatabase } from './lib/infer.js';
 import { generateSqlInitialMigration } from '@qlite/core';
 
 const output = option({

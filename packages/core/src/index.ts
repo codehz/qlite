@@ -1,3 +1,3 @@
-export * from './lib/generate-root-types';
-export * from './lib/generate-initial-migration';
-export * from './lib/builtin-defs';
+export * from './lib/generate-root-types.js';
+export * from './lib/generate-initial-migration.js';
+export * from './lib/builtin-defs.js';
