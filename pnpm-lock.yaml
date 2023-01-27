@@ -1,6 +1,7 @@
 lockfileVersion: 5.4
 
 specifiers:
+  '@graphql-tools/schema': ^9.0.14
   '@graphql-tools/utils': ^9.1.4
   '@nrwl/devkit': ^15.6.2
   '@nrwl/eslint-plugin-nx': 15.6.2
@@ -23,6 +24,7 @@ specifiers:
   typescript: ~4.8.2
 
 dependencies:
+  '@graphql-tools/schema': 9.0.14_graphql@16.6.0
   '@graphql-tools/utils': 9.1.4_graphql@16.6.0
   better-sqlite3: 8.0.1
   cmd-ts: 0.12.0
@@ -1294,6 +1296,28 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
+
+  /@graphql-tools/merge/8.3.16_graphql@16.6.0:
+    resolution: {integrity: sha512-In0kcOZcPIpYOKaqdrJ3thdLPE7TutFnL9tbrHUy2zCinR2O/blpRC48jPckcs0HHrUQ0pGT4HqvzMkZUeEBAw==}
+    peerDependencies:
+      graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
+    dependencies:
+      '@graphql-tools/utils': 9.1.4_graphql@16.6.0
+      graphql: 16.6.0
+      tslib: 2.5.0
+    dev: false
+
+  /@graphql-tools/schema/9.0.14_graphql@16.6.0:
+    resolution: {integrity: sha512-U6k+HY3Git+dsOEhq+dtWQwYg2CAgue8qBvnBXoKu5eEeH284wymMUoNm0e4IycOgMCJANVhClGEBIkLRu3FQQ==}
+    peerDependencies:
+      graphql: ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
+    dependencies:
+      '@graphql-tools/merge': 8.3.16_graphql@16.6.0
+      '@graphql-tools/utils': 9.1.4_graphql@16.6.0
+      graphql: 16.6.0
+      tslib: 2.5.0
+      value-or-promise: 1.0.12
+    dev: false
 
   /@graphql-tools/utils/9.1.4_graphql@16.6.0:
     resolution: {integrity: sha512-hgIeLt95h9nQgQuzbbdhuZmh+8WV7RZ/6GbTj6t3IU4Zd2zs9yYJ2jgW/krO587GMOY8zCwrjNOMzD40u3l7Vg==}
@@ -3480,6 +3504,11 @@ packages:
   /v8-compile-cache/2.3.0:
     resolution: {integrity: sha512-l8lCEmLcLYZh4nbunNZvQCJc5pv7+RCwa8q/LdUx8u7lsWvPDKmpodJAJNwkAhJC//dFY48KuIEmjtd4RViDrA==}
     dev: true
+
+  /value-or-promise/1.0.12:
+    resolution: {integrity: sha512-Z6Uz+TYwEqE7ZN50gwn+1LCVo9ZVrpxRPOhOLnncYkY1ZzOYtrX8Fwf/rFktZ8R5mJms6EZf5TqNOMeZmnPq9Q==}
+    engines: {node: '>=12'}
+    dev: false
 
   /which/2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
