@@ -7,6 +7,9 @@ import {
   subcommands,
   flag,
   boolean,
+  number,
+  optional,
+  string,
 } from 'cmd-ts';
 import {
   GraphQLFile,
@@ -21,6 +24,8 @@ import {
 } from '@qlite/core';
 import { mergeSchemas } from '@graphql-tools/schema';
 import { printSchema } from 'graphql';
+import { serveHttp } from './lib/server.js';
+import { printSchemaWithDirectives } from '@graphql-tools/utils';
 
 const output = option({
   type: OutputStream,
@@ -72,21 +77,47 @@ const generate = command({
   handler(args) {
     const [extended_schema, typedefs] = generateRootTypes(args.input);
     const schema = mergeSchemas({
-      schemas: [args.input, extended_schema],
+      schemas: [extended_schema],
       typeDefs: [typedefs],
     });
     if (args.stripDirectives) {
       const mapped = filterOutBuiltinDefinitions(schema);
       args.output.write(printSchema(mapped) + '\n');
     } else {
-      args.output.write(printSchema(schema) + '\n');
+      args.output.write(printSchemaWithDirectives(schema) + '\n');
     }
+  },
+});
+
+const serve = command({
+  name: 'serve',
+  args: {
+    input: positional({
+      type: GraphQLFile,
+    }),
+    port: option({
+      long: 'port',
+      short: 'p',
+      type: number,
+      defaultValue: () => 9000,
+    }),
+    db: option({
+      long: 'database',
+      type: optional(string),
+    }),
+    seed: option({
+      long: 'seed',
+      type: optional(string),
+    }),
+  },
+  handler(args) {
+    serveHttp(args.input, args);
   },
 });
 
 const app = subcommands({
   name: 'qlite',
-  cmds: { init, infer, generate },
+  cmds: { init, infer, generate, serve },
 });
 
 run(app, process.argv.slice(2));

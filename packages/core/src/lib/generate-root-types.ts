@@ -24,6 +24,7 @@ import {
   NonNullTypeNode,
   TypeNode,
 } from 'graphql';
+import { getColumns, getRelations } from './internals/utils.js';
 
 const OrderBy = new GraphQLEnumType({
   name: 'order_by',
@@ -66,7 +67,14 @@ export function generateRootTypes(schema: GraphQLSchema) {
     name: 'Query',
     fields: Object.fromEntries(queries),
   });
-  const output = new GraphQLSchema({ types: [Query, ...Object.values(types)] });
+  const output = new GraphQLSchema({
+    directives: schema.getDirectives(),
+    types: [
+      ...Object.values(schema.getTypeMap()),
+      Query,
+      ...Object.values(types),
+    ],
+  });
   return [output, extended] as const;
 }
 
@@ -161,9 +169,6 @@ function generateQuery(
           offset: { type: GraphQLInt },
           where: { type: bool_exp },
           order_by: { type: order_by },
-          distinct_on: {
-            type: new GraphQLList(new GraphQLNonNull(select_column)),
-          },
         },
       },
     ]);
@@ -257,22 +262,4 @@ function generateInputValueDefinitionsAst(
       type,
     })
   );
-}
-
-function getColumns(item: GraphQLObjectType, schema: GraphQLSchema) {
-  return Object.entries(item.getFields()).map(([k, v]) => {
-    const dir = getDirective(schema, v, 'column')?.[0];
-    return { name: k, type: v.type, ...(dir as { primary_key?: boolean }) };
-  });
-}
-
-function getRelations(item: GraphQLObjectType, schema: GraphQLSchema) {
-  return getDirective(schema, item, 'relation') as
-    | undefined
-    | {
-        type: 'array' | 'object';
-        name?: string;
-        target: string;
-        defintions: { from: string; to: string }[];
-      }[];
 }
