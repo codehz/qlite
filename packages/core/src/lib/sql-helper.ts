@@ -338,7 +338,6 @@ export function generateInsert(
   name: string
 ): (SQLQuery & { returning: boolean }) | undefined {
   const mapper = new SQLMapper(schema, name, name);
-  // const selections = mapper.selections(root.subfields);
   const args = root.arguments as {
     objects: MaybeArray<Record<string, unknown>>;
     on_conflict: MaybeArray<OnConflict>;
@@ -378,6 +377,38 @@ export function generateInsert(
   return {
     raw,
     parameters: [JSON.stringify(objects)],
+    returning: !selections.empty,
+  };
+}
+
+export function generateDelete(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery & { returning: boolean } {
+  const mapper = new SQLMapper(schema, name, name);
+  const arg = root.arguments as {
+    where?: Record<string, unknown>;
+  };
+  let where: string | undefined;
+  if (arg.where) where = mapper.where(arg.where);
+  const queue: string[] = []
+  queue.push(fmt`DELETE FROM %q`(name));
+  queue.push(trueMap(where, fmt`WHERE %s`));
+  const selections = new SQLSelections();
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      selections.merge(mapper.selections(field.subfields));
+    }
+  }
+  if (!selections.empty) {
+    queue.push(fmt`RETURNING %s`(selections.asSelect()));
+  }
+  const raw = queue.filter(Boolean).join(' ');
+  console.log(raw);
+  return {
+    raw,
+    parameters: [],
     returning: !selections.empty,
   };
 }
