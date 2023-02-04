@@ -38,6 +38,30 @@ export function generateResolver(schema: GraphQLSchema, trait: SQLiteTrait) {
   return Root;
 }
 
+function populateType(schema: GraphQLSchema, name: string) {
+  const type = schema.getType(name);
+  if (!type || !(type instanceof GraphQLObjectType))
+    throw new Error('invalid type ' + name);
+  return {
+    [name]: Object.fromEntries(
+      Object.keys(type.getFields()).map((x) => {
+        const key = name + '.' + x;
+        return [
+          x,
+          {
+            [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
+              return resolveJSON(
+                obj['$' + info.path.key],
+                !info.path.prev?.prev
+              );
+            },
+          }[key] as ResolverType,
+        ];
+      })
+    ),
+  };
+}
+
 function generateQuery(
   entity: { exported: boolean },
   item: GraphQLObjectType,
@@ -72,9 +96,7 @@ function generateQuery(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateSQL(schema, parsed);
-        const ret = trait.one(sql.raw, sql.parameters);
-        console.log(ret);
-        return ret;
+        return trait.one(sql.raw, sql.parameters);
       },
       [item.name](_obj: any, args: any, _ctx: any, info: GraphQLResolveInfo) {
         const parsed = parseResolveInfo(args, info);
@@ -83,22 +105,8 @@ function generateQuery(
       },
     });
     Object.assign(Root, {
-      [item.name + '_aggregate']: Object.fromEntries(
-        ['nodes', 'aggregate'].map((x) => {
-          const key = item.name + '.' + x;
-          return [
-            x,
-            {
-              [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
-                return resolveJSON(
-                  obj['$' + info.path.key],
-                  !info.path.prev?.prev
-                );
-              },
-            }[key] as ResolverType,
-          ];
-        })
-      ),
+      ...populateType(schema, item.name + '_aggregate'),
+      ...populateType(schema, item.name + '_aggregate_fields'),
     });
   }
   const relations = getRelations(item, schema);

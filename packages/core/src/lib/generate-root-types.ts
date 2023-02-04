@@ -6,6 +6,7 @@ import {
   GraphQLBoolean,
   GraphQLEnumType,
   GraphQLFieldConfig,
+  GraphQLFloat,
   GraphQLInputFieldConfig,
   GraphQLInputObjectType,
   GraphQLInputType,
@@ -150,11 +151,23 @@ const NameMap = new Proxy(
   | 'set_input'
   | 'pk_columns_input'
   | 'updates'
-  | 'max_fields'
   | 'min_fields'
+  | 'max_fields'
+  | 'avg_fields'
+  | 'sum_fields'
   | 'aggregate_fields'
   | 'aggregate'
 >;
+
+function isTypeOrNonNull(x: GraphQLOutputType, y: GraphQLNullableType) {
+  if (x === y) return true;
+  else if (x instanceof GraphQLNonNull) return x.ofType === y;
+  return false;
+}
+
+function isNotEmptyObject(x: GraphQLObjectType) {
+  return !!Object.keys(x.getFields()).length;
+}
 
 function generateRootType(
   entity: { exported: boolean },
@@ -185,7 +198,7 @@ function generateRootType(
   const select_column: GraphQLEnumType = new GraphQLEnumType({
     name: NameMap.select_column(item.name),
     values: Object.fromEntries(columns.map((x) => [x.name, {}])),
-    description: `select columns of table ${item.name}`
+    description: `select columns of table ${item.name}`,
   });
   addTypes(types, select_column);
   const minmaxfields = Object.fromEntries(
@@ -199,15 +212,37 @@ function generateRootType(
   const min_fields = new GraphQLObjectType({
     name: NameMap.min_fields(item.name),
     fields: minmaxfields,
-    description: `aggregate min on columns`
+    description: `aggregate min on columns`,
   });
   addTypes(types, min_fields);
   const max_fields = new GraphQLObjectType({
     name: NameMap.max_fields(item.name),
     fields: minmaxfields,
-    description: `aggregate max on columns`
+    description: `aggregate max on columns`,
   });
   addTypes(types, max_fields);
+  const avgsumfields = Object.fromEntries(
+    columns
+      .filter((x) => isTypeOrNonNull(x.type, GraphQLFloat))
+      .map((x) => [
+        x.name,
+        {
+          type: x.type,
+        },
+      ])
+  );
+  const avg_fields = new GraphQLObjectType({
+    name: NameMap.avg_fields(item.name),
+    fields: avgsumfields,
+    description: `aggregate avg on columns`,
+  });
+  if (isNotEmptyObject(avg_fields)) addTypes(types, avg_fields);
+  const sum_fields = new GraphQLObjectType({
+    name: NameMap.sum_fields(item.name),
+    fields: avgsumfields,
+    description: `aggregate sum on columns`,
+  });
+  if (isNotEmptyObject(sum_fields)) addTypes(types, sum_fields);
   const aggregate_fields = new GraphQLObjectType({
     name: NameMap.aggregate_fields(item.name),
     fields: {
@@ -228,6 +263,12 @@ function generateRootType(
       max: {
         type: new GraphQLNonNull(max_fields),
       },
+      ...(isNotEmptyObject(avg_fields)
+        ? { avg: { type: new GraphQLNonNull(avg_fields) } }
+        : {}),
+      ...(isNotEmptyObject(sum_fields)
+        ? { sum: { type: new GraphQLNonNull(sum_fields) } }
+        : {}),
     },
     description: `aggregate fields of ${item.name}`,
   });
@@ -270,7 +311,7 @@ function generateRootType(
         } as GraphQLInputFieldConfig,
       ])
     ),
-    description: `input type for inserting data into table ${item.name}`
+    description: `input type for inserting data into table ${item.name}`,
   });
   addTypes(types, insert_input);
   const conflict_target = new GraphQLInputObjectType({
@@ -283,7 +324,7 @@ function generateRootType(
         type: bool_exp,
       },
     },
-    description: `conflict target for table ${item.name}`
+    description: `conflict target for table ${item.name}`,
   });
   addTypes(types, conflict_target);
   const on_conflict = new GraphQLInputObjectType({
@@ -299,7 +340,7 @@ function generateRootType(
         type: bool_exp,
       },
     },
-    description: `on_conflict condition type for table ${item.name}`
+    description: `on_conflict condition type for table ${item.name}`,
   });
   addTypes(types, on_conflict);
   const set_input = new GraphQLInputObjectType({
@@ -312,7 +353,7 @@ function generateRootType(
         } as GraphQLInputFieldConfig,
       ])
     ),
-    description: `input type for updating data in table ${item.name}`
+    description: `input type for updating data in table ${item.name}`,
   });
   addTypes(types, set_input);
   const updates_fields = {

@@ -34,7 +34,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     }
   }
   const [extended_schema, typedefs] = generateRootTypes(schema);
-  const resolver = generateResolver(cloneSchema(schema), {
+  const resolver = generateResolver(cloneSchema(extended_schema), {
     one(raw, parameters) {
       const stmt = db.prepare(raw);
       return stmt.get(parameters);

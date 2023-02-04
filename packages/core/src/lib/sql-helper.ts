@@ -70,6 +70,8 @@ function generateSubQuery(
 const QUERY_BY_PK = /^(.+)_by_pk$/;
 const QUERY_AGGREGATE = /^(.+)_aggregate$/;
 
+const SIMPLE_AGGREGATE_FUNCTIONS = ['min', 'max', 'avg', 'sum'];
+
 class SQLMapper {
   tablename: string;
   type: GraphQLObjectType;
@@ -130,23 +132,31 @@ class SQLMapper {
 
   aggregate(queryfields: readonly FieldInfo[]) {
     const selections = new SQLSelections();
-    for (const subfield of queryfields) {
-      if (subfield.name === 'count') {
+    for (const field of queryfields) {
+      if (field.name === 'count') {
         let count_arg = trueMap(
-          subfield.arguments['columns'] as string[],
+          resolveInputArray(field.arguments['columns'] as string),
           (columns) =>
             columns
-              .map((x) => fmt`%q`(fmt`%s.%s`(this.alias, this.#namemap[x])))
+              .map((x) => fmt`%q.%q`(this.alias, this.#namemap[x]))
               .join(', ')
         );
-        if (subfield.arguments['distinct'] && count_arg)
+        if (field.arguments['distinct'] && count_arg)
           count_arg = 'DISTINCT ' + count_arg;
         selections.add$(
-          subfield.alias,
+          field.alias,
           count_arg ? fmt`count(%s)`(count_arg) : `count(*)`
         );
+      } else if (SIMPLE_AGGREGATE_FUNCTIONS.includes(field.name)) {
+        const jsonsel = new SQLSelections();
+        for (const subfield of field.subfields) {
+          const dbname = this.#namemap[subfield.name];
+          jsonsel.add(subfield.name, fmt`%s(%q)`(field.name, dbname));
+        }
+        selections.add$(field.alias, fmt`json_object(%s)`(jsonsel.asJSON()));
       }
     }
+    return selections;
   }
 
   where(arg: Record<string, unknown>) {
@@ -188,6 +198,9 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
           field.alias,
           fmt`json_group_array(json_object(%s))`(subsel.asJSON())
         );
+      } else if (field.name === 'aggregate') {
+        const subsel = mapper.aggregate(field.subfields);
+        selections.add$(field.alias, fmt`json_object(%s)`(subsel.asJSON()));
       }
     }
     const arg = root.arguments as {
@@ -239,4 +252,10 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
     console.log(raw);
     return { raw, parameters: [] };
   }
+}
+
+function resolveInputArray<T>(x: T | T[]): T[] | undefined {
+  if (x == null) return void 0;
+  if (Array.isArray(x)) return x;
+  return [x];
 }

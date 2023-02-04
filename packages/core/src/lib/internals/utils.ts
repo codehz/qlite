@@ -3,8 +3,11 @@ import { GraphQLObjectType, GraphQLSchema } from 'graphql';
 
 export function getColumns(item: GraphQLObjectType, schema: GraphQLSchema) {
   return Object.entries(item.getFields()).map(([k, v]) => {
-    const dir = getDirective(schema, v, 'column')?.[0];
-    return { name: k, type: v.type, ...(dir as { primary_key?: boolean }) };
+    const { name, ...dir } = getDirective(schema, v, 'column')?.[0] as {
+      name?: string;
+      primary_key?: boolean;
+    };
+    return { name: k, dbname: name, type: v.type, ...dir };
   });
 }
 
