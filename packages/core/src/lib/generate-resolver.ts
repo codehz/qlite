@@ -82,7 +82,10 @@ function generateQuery(
             x,
             {
               [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
-                return resolveJSON(obj['$' + info.path.key]);
+                return resolveJSON(
+                  obj['$' + info.path.key],
+                  !info.path.prev?.prev
+                );
               },
             }[key] as ResolverType,
           ];
@@ -92,9 +95,7 @@ function generateQuery(
   }
 }
 
-function resolveJSON(
-  o: string | Record<string, unknown>
-): Record<string, unknown> {
-  if (typeof o === 'string') return JSON.parse(o) as Record<string, unknown>;
+function resolveJSON(o: any, convert: boolean): Record<string, unknown> {
+  if (convert) return JSON.parse(o) as Record<string, unknown>;
   return o;
 }
