@@ -7,7 +7,6 @@ import {
   SQLSelections,
   generateOrderBy,
   generateWhere,
-  quoteStr,
 } from './internals/sql.js';
 import { getRelations, Relation } from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
@@ -37,7 +36,7 @@ function generateSubQuery(
       where?: Record<string, unknown>;
       order_by?: Record<string, string>;
     };
-    if (arg.where) where.push(...mapper.where(arg.where));
+    if (arg.where) where.push(mapper.where(arg.where));
     const query = [
       fmt`SELECT json_group_array(json_object(%s)) FROM %q AS %q`(
         selections.asJSON(),
@@ -184,7 +183,9 @@ class SQLMapper implements SQLMapperBase {
   }
 
   where(arg: Record<string, unknown>) {
-    return generateWhere(arg, this.alias, this.namemap).filter(Boolean);
+    return generateWhere(arg, this.alias, this.namemap)
+      .filter(Boolean)
+      .join(' AND ');
   }
 }
 
@@ -239,12 +240,12 @@ export function generateQueryAggregate(
     where?: Record<string, unknown>;
     order_by?: Record<string, string>;
   };
-  const where: string[] = [];
-  if (arg.where) where.push(...mapper.where(arg.where));
+  let where: string | undefined;
+  if (arg.where) where = mapper.where(arg.where);
   const raw = [
     fmt`SELECT %s`(selections.asSelect()),
     fmt`FROM %s`(mapper.from),
-    trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
+    trueMap(where, fmt`WHERE %s`),
     trueMap(arg.order_by, (x) =>
       trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
     ),
@@ -270,17 +271,17 @@ export function generateQuery(
     where?: Record<string, unknown>;
     order_by?: Record<string, string>;
   };
-  const where: string[] = [];
-  if (arg.where) where.push(...mapper.where(arg.where));
+  let where: string | undefined;
+  if (arg.where) where = mapper.where(arg.where);
   const raw = [
     fmt`SELECT %s`(selections.asSelect()),
     fmt`FROM %s`(mapper.from),
-    trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
+    trueMap(where, fmt`WHERE %s`),
     trueMap(arg.order_by, (x) =>
       trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
     ),
-    trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
-    trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
+    trueMap(arg.limit, fmt`LIMIT %s`),
+    trueMap(arg.offset, fmt`OFFSET %s`),
   ]
     .filter(Boolean)
     .join(' ');
@@ -306,7 +307,6 @@ export function generateInsertOne(
       where?: Record<string, unknown>;
     }>;
   };
-  const on_conflicts = normalizeInputArray(args.on_conflict);
   const column_template: string[] = [];
   const parameters: unknown[] = [];
   for (const [key, value] of Object.entries(args.object)) {
@@ -322,38 +322,7 @@ export function generateInsertOne(
         column_template.map(() => '?').join(', ')
       )
     );
-    if (on_conflicts) {
-      for (const cond of on_conflicts) {
-        queue.push('ON CONFLICT');
-        if (cond.target) {
-          const columns = normalizeInputArray(cond.target.columns);
-          if (columns) {
-            queue.push(fmt`(%s)`(columns.map((x) => quoteStr(x)).join(', ')));
-            if (cond.where) {
-              queue.push(fmt`WHERE %s`(mapper.where(cond.where).join(' AND ')));
-            }
-          }
-        }
-        queue.push('DO');
-        const updates = normalizeInputArray(cond.update_columns);
-        if (updates) {
-          queue.push('UPDATE SET');
-          queue.push(
-            updates
-              .map((column) => {
-                const mapped_name = mapper.namemap[column];
-                return fmt`%q = excluded.%q`(mapped_name, mapped_name);
-              })
-              .join(', ')
-          );
-          if (cond.where) {
-            queue.push(fmt`WHERE %s`(mapper.where(cond.where).join(' AND ')));
-          }
-        } else {
-          queue.push('NOTHING');
-        }
-      }
-    }
+    queue.push(gneerateOnConflict(args.on_conflict, mapper));
   } else {
     queue.push('DEFAULT VALUES');
   }
@@ -361,6 +330,103 @@ export function generateInsertOne(
   const raw = queue.filter(Boolean).join(' ');
   console.log(raw);
   return { raw, parameters };
+}
+
+export function generateInsert(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): (SQLQuery & { returning: boolean }) | undefined {
+  const mapper = new SQLMapper(schema, name, name);
+  // const selections = mapper.selections(root.subfields);
+  const args = root.arguments as {
+    objects: MaybeArray<Record<string, unknown>>;
+    on_conflict: MaybeArray<OnConflict>;
+  };
+  const objects = normalizeInputArray(args.objects);
+  if (!objects) return void 0;
+  const column_set = new Set<string>();
+  for (const object of objects) {
+    for (const key of Object.keys(object)) {
+      column_set.add(key);
+    }
+  }
+  const insert_columns: string[] = [];
+  const select_columns: string[] = [];
+  for (const key of column_set) {
+    insert_columns.push(fmt`%q`(mapper.namemap[key]));
+    select_columns.push(fmt`value ->> %t`(key));
+  }
+  const selections = new SQLSelections();
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      selections.merge(mapper.selections(field.subfields));
+    }
+  }
+  const queue: string[] = [];
+  queue.push(fmt`INSERT INTO %q`(name));
+  queue.push(fmt`(%s)`(insert_columns.join(', ')));
+  queue.push(fmt`SELECT %s FROM json_each(?)`(select_columns.join(', ')));
+  queue.push(
+    trueMap(gneerateOnConflict(args.on_conflict, mapper), fmt`WHERE true %s`)
+  );
+  if (!selections.empty) {
+    queue.push(fmt`RETURNING %s`(selections.asSelect()));
+  }
+  const raw = queue.filter(Boolean).join(' ');
+  console.log(raw);
+  return {
+    raw,
+    parameters: [JSON.stringify(objects)],
+    returning: !selections.empty,
+  };
+}
+
+type OnConflict = {
+  target?: {
+    columns: MaybeArray<string>;
+    where?: Record<string, unknown>;
+  };
+  update_columns: MaybeArray<string>;
+  where?: Record<string, unknown>;
+};
+
+function gneerateOnConflict(input: MaybeArray<OnConflict>, mapper: SQLMapper) {
+  const on_conflicts = normalizeInputArray(input);
+  const queue: string[] = [];
+  if (on_conflicts) {
+    for (const cond of on_conflicts) {
+      queue.push('ON CONFLICT');
+      if (cond.target) {
+        const columns = normalizeInputArray(cond.target.columns);
+        if (columns) {
+          queue.push(fmt`(%s)`(columns.map((x) => fmt`%q`(x)).join(', ')));
+          if (cond.where) {
+            queue.push(fmt`WHERE %s`(mapper.where(cond.where)));
+          }
+        }
+      }
+      queue.push('DO');
+      const updates = normalizeInputArray(cond.update_columns);
+      if (updates) {
+        queue.push('UPDATE SET');
+        queue.push(
+          updates
+            .map((column) => {
+              const mapped_name = mapper.namemap[column];
+              return fmt`%q = excluded.%q`(mapped_name, mapped_name);
+            })
+            .join(', ')
+        );
+        if (cond.where) {
+          queue.push(fmt`WHERE %s`(mapper.where(cond.where)));
+        }
+      } else {
+        queue.push('NOTHING');
+      }
+    }
+  }
+  return queue.join(' ');
 }
 
 type MaybeArray<T> = T | T[];

@@ -130,6 +130,14 @@ export class SQLSelections {
   add$(key: string, value: string, wrap = false) {
     this.#selections.set('$' + key, wrap ? fmt`(%s)`(value) : value);
   }
+  merge(rhs: SQLSelections) {
+    for (const [key, value] of rhs.#selections) {
+      this.#selections.set(key, value);
+    }
+  }
+  get empty() {
+    return this.#selections.size === 0;
+  }
   asJSON() {
     return [...this.#selections.entries()]
       .map(([key, value]) => fmt`%t, %s`(key, value))

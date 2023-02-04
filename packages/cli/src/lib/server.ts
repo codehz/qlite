@@ -44,17 +44,26 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
       const stmt = db.prepare(raw);
       return stmt.all(...parameters);
     },
-    mutate(raw, parameters) {
+    mutate(raw, parameters, do_returning: boolean) {
       const stmt = db.prepare(raw);
       return db.transaction(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (): { affected_rows: number; returning: Array<any> } => {
-          const returning = stmt.all(...parameters);
-          const affected_rows = get_changes.get().affected_rows as number;
-          return {
-            affected_rows,
-            returning,
-          };
+          if (do_returning) {
+            const returning = stmt.all(...parameters);
+            const affected_rows = get_changes.get().affected_rows as number;
+            return {
+              affected_rows,
+              returning,
+            };
+          } else {
+            stmt.run(...parameters);
+            const affected_rows = get_changes.get().affected_rows as number;
+            return {
+              affected_rows,
+              returning: [],
+            };
+          }
         }
       )();
     },

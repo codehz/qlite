@@ -1,6 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective, MaybePromise } from '@graphql-tools/utils';
-import { GraphQLObjectType, GraphQLResolveInfo, GraphQLSchema } from 'graphql';
+import {
+  GraphQLNonNull,
+  GraphQLObjectType,
+  GraphQLOutputType,
+  GraphQLResolveInfo,
+  GraphQLSchema,
+  GraphQLString,
+} from 'graphql';
 import { getRelations } from './internals/utils.js';
 import { parseResolveInfo } from './selection-utils.js';
 import {
@@ -8,6 +15,7 @@ import {
   generateQueryAggregate,
   generateQuery,
   generateInsertOne,
+  generateInsert,
 } from './sql-helper.js';
 
 export type SQLiteTrait = {
@@ -15,7 +23,8 @@ export type SQLiteTrait = {
   all(sql: string, parameters: any[]): any;
   mutate(
     sql: string,
-    parameters: any[]
+    parameters: any[],
+    returning: boolean
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
 };
 
@@ -64,10 +73,7 @@ function populateType(schema: GraphQLSchema, name: string) {
           x,
           {
             [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
-              return resolveJSON(
-                obj['$' + info.path.key],
-                !info.path.prev?.prev
-              );
+              return resolveJSON(obj['$' + info.path.key], info.returnType);
             },
           }[key] as ResolverType,
         ];
@@ -135,6 +141,17 @@ function generateFieldResolver(
         const sql = generateInsertOne(schema, parsed, item.name);
         return trait.one(sql.raw, sql.parameters);
       },
+      ['insert_' + item.name](
+        _obj: any,
+        args: any,
+        _ctx: any,
+        info: GraphQLResolveInfo
+      ) {
+        const parsed = parseResolveInfo(args, info);
+        const sql = generateInsert(schema, parsed, item.name);
+        if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
+        else return { affected_rows: 0, returning: [] };
+      },
     });
   }
   const relations = getRelations(item, schema);
@@ -148,10 +165,7 @@ function generateFieldResolver(
             x,
             {
               [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
-                return resolveJSON(
-                  obj['$' + info.path.key],
-                  !info.path.prev?.prev
-                );
+                return resolveJSON(obj['$' + info.path.key], info.returnType);
               },
             }[key] as ResolverType,
           ];
@@ -161,7 +175,12 @@ function generateFieldResolver(
   }
 }
 
-function resolveJSON(o: any, convert: boolean): Record<string, unknown> {
-  if (convert) return JSON.parse(o) as Record<string, unknown>;
+function resolveJSON(o: any, type: GraphQLOutputType): Record<string, unknown> {
+  if (
+    typeof o === 'string' &&
+    !(type === GraphQLString) &&
+    !(type instanceof GraphQLNonNull && type.ofType === GraphQLString)
+  )
+    return JSON.parse(o) as Record<string, unknown>;
   return o;
 }
