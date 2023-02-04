@@ -149,6 +149,7 @@ const NameMap = new Proxy(
   | 'insert_input'
   | 'on_conflict'
   | 'conflict_target'
+  | 'inc_input'
   | 'set_input'
   | 'pk_columns_input'
   | 'updates'
@@ -357,6 +358,25 @@ function generateRootType(
     description: `on_conflict condition type for table ${item.name}`,
   });
   addTypes(types, on_conflict);
+  const inc_input = new GraphQLInputObjectType({
+    name: NameMap.inc_input(item.name),
+    fields: Object.fromEntries(
+      columns
+        .filter(
+          (x) =>
+            isTypeOrNonNull(x.type, GraphQLInt) ||
+            isTypeOrNonNull(x.type, GraphQLFloat)
+        )
+        .map((x) => [
+          x.name,
+          {
+            type: toNullable(x.type as any as GraphQLInputType),
+          } as GraphQLInputFieldConfig,
+        ])
+    ),
+    description: `input type for updating data in table ${item.name}`,
+  });
+  if (isNotEmptyObject(inc_input)) addTypes(types, inc_input);
   const set_input = new GraphQLInputObjectType({
     name: NameMap.set_input(item.name),
     fields: Object.fromEntries(
@@ -370,11 +390,23 @@ function generateRootType(
     description: `input type for updating data in table ${item.name}`,
   });
   addTypes(types, set_input);
-  const updates_fields = {
+  const base_update_fields = {
+    ...(isNotEmptyObject(inc_input)
+      ? {
+          _inc: {
+            type: inc_input,
+            description:
+              'increments the numeric columns with given value of the filtered values',
+          },
+        }
+      : {}),
     _set: {
       type: set_input,
       description: 'sets the columns of the filtered rows to the given values',
     },
+  };
+  const update_fields = {
+    ...base_update_fields,
     where: {
       type: bool_exp,
       description: 'filter the rows which have to be updated',
@@ -382,7 +414,7 @@ function generateRootType(
   };
   const updates = new GraphQLInputObjectType({
     name: NameMap.updates(item.name),
-    fields: updates_fields,
+    fields: update_fields,
   });
   addTypes(types, updates);
   const pks = columns.filter((x) => !!x.primary_key);
@@ -485,7 +517,7 @@ function generateRootType(
       `update_${item.name}`,
       {
         type: mutation_response,
-        args: updates_fields,
+        args: update_fields,
         description: `update data of the table: ${item.name}`,
       },
     ]);

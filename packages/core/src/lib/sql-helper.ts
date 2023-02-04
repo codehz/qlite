@@ -436,17 +436,11 @@ export function generateUpdate(
   name: string
 ): (SQLQuery & { returning: boolean }) | undefined {
   const mapper = new SQLMapper(schema, name, name);
-  const setters: string[] = [];
-  const parameters: unknown[] = [];
-  const arg = root.arguments as {
+  const arg = root.arguments as GenericUpdates & {
     _set?: Record<string, unknown>;
     where?: Record<string, unknown>;
   };
-  if (arg._set)
-    for (const [key, value] of Object.entries(arg._set)) {
-      setters.push(fmt`%q = ?`(mapper.namemap[key]));
-      parameters.push(value);
-    }
+  const { setters, parameters } = getUpdates(arg, mapper);
   if (!setters.length) return void 0;
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
@@ -477,17 +471,10 @@ export function generateUpdateByPk(
   name: string
 ): SQLQuery {
   const mapper = new SQLMapper(schema, name, name);
-  const setters: string[] = [];
-  const parameters: unknown[] = [];
-  const arg = root.arguments as {
-    _set?: Record<string, unknown>;
+  const arg = root.arguments as GenericUpdates & {
     pk_columns: Record<string, unknown>;
   };
-  if (arg._set)
-    for (const [key, value] of Object.entries(arg._set)) {
-      setters.push(fmt`%q = ?`(mapper.namemap[key]));
-      parameters.push(value);
-    }
+  const { setters, parameters } = getUpdates(arg, mapper);
   const where: string[] = [];
   for (const [key, value] of Object.entries(arg.pk_columns)) {
     const mapped = mapper.namemap[key];
@@ -514,10 +501,11 @@ export function generateUpdateMany(
 ): { tasks: (SQLQuery | undefined)[]; returning: boolean } | undefined {
   const mapper = new SQLMapper(schema, name, name);
   const arg = root.arguments as {
-    updates: MaybeArray<{
-      _set?: Record<string, unknown>;
-      where?: Record<string, unknown>;
-    }>;
+    updates: MaybeArray<
+      GenericUpdates & {
+        where?: Record<string, unknown>;
+      }
+    >;
   };
   const updates = normalizeInputArray(arg.updates);
   if (!updates) return undefined;
@@ -529,13 +517,7 @@ export function generateUpdateMany(
   }
   return {
     tasks: updates.map((arg) => {
-      const setters: string[] = [];
-      const parameters: unknown[] = [];
-      if (arg._set)
-        for (const [key, value] of Object.entries(arg._set)) {
-          setters.push(fmt`%q = ?`(mapper.namemap[key]));
-          parameters.push(value);
-        }
+      const { setters, parameters } = getUpdates(arg, mapper);
       if (!setters.length) return void 0;
       let where: string | undefined;
       if (arg.where) where = mapper.where(arg.where);
@@ -557,6 +539,24 @@ export function generateUpdateMany(
     }),
     returning: !selections.empty,
   };
+}
+
+type GenericUpdates = Record<'_set' | '_inc', Record<string, unknown>>;
+
+function getUpdates(arg: GenericUpdates, mapper: SQLMapper) {
+  const setters: string[] = [];
+  const parameters: unknown[] = [];
+  if (arg._set)
+    for (const [key, value] of Object.entries(arg._set)) {
+      setters.push(fmt`%q = ?`(mapper.namemap[key]));
+      parameters.push(value);
+    }
+  if (arg._inc)
+    for (const [key, value] of Object.entries(arg._inc)) {
+      setters.push(fmt`%q = %q + ?`(mapper.namemap[key], mapper.namemap[key]));
+      parameters.push(value);
+    }
+  return { setters, parameters };
 }
 
 type OnConflict = {
