@@ -165,7 +165,7 @@ function isTypeOrNonNull(x: GraphQLOutputType, y: GraphQLNullableType) {
   return false;
 }
 
-function isNotEmptyObject(x: GraphQLObjectType) {
+function isNotEmptyObject(x: GraphQLObjectType | GraphQLInputObjectType) {
   return !!Object.keys(x.getFields()).length;
 }
 
@@ -385,22 +385,19 @@ function generateRootType(
   });
   addTypes(types, updates);
   const pks = columns.filter((x) => !!x.primary_key);
-  let pk_columns_input: GraphQLInputObjectType;
-  if (pks.length) {
-    pk_columns_input = new GraphQLInputObjectType({
-      name: NameMap.pk_columns_input(item.name),
-      fields: Object.fromEntries(
-        pks.map((x) => [
-          x.name,
-          {
-            type: x.type as any as GraphQLInputType,
-          } as GraphQLInputFieldConfig,
-        ])
-      ),
-      description: `primary key columns input for table: ${item.name}`,
-    });
-    addTypes(types, pk_columns_input);
-  }
+  const pk_columns_input = new GraphQLInputObjectType({
+    name: NameMap.pk_columns_input(item.name),
+    fields: Object.fromEntries(
+      pks.map((x) => [
+        x.name,
+        {
+          type: x.type as any as GraphQLInputType,
+        } as GraphQLInputFieldConfig,
+      ])
+    ),
+    description: `primary key columns input for table: ${item.name}`,
+  });
+  if (isNotEmptyObject(pk_columns_input)) addTypes(types, pk_columns_input);
   if (entity.exported) {
     const query_args = {
       limit: {
@@ -540,8 +537,7 @@ function generateRootType(
                 'sets the columns of the filtered rows to the given values',
             },
             pk_columns: {
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              type: pk_columns_input!,
+              type: pk_columns_input,
               description: 'filter the rows which have to be updated',
             },
           },
