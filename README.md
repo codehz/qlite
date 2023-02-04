@@ -6,7 +6,7 @@ It will be deployable in Cloudflare Workers (WIP).
 
 You can define your SQLite3 schema in a single GraphQL schema file (or generate GraphQL schema from existing SQLite3 database).
 
-![**status: Work in progress!**](https://svg.hertz.services/text?content=Status:+Working+in+progress!&fontFamily=monospace&percent=0.9&color=red)
+![**status: WIP!**](https://svg.hertz.services/text?content=Status:+WIP!&fontFamily=monospace&percent=0.9)
 
 ## Features
 
