@@ -413,15 +413,15 @@ export function generateDelete(
   };
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
-  const queue: string[] = [];
-  queue.push(fmt`DELETE FROM %q`(name));
-  queue.push(trueMap(where, fmt`WHERE %s`));
   const selections = new SQLSelections();
   for (const field of root.subfields) {
     if (field.name === 'returning') {
       selections.merge(mapper.selections(field.subfields));
     }
   }
+  const queue: string[] = [];
+  queue.push(fmt`DELETE FROM %q`(name));
+  queue.push(trueMap(where, fmt`WHERE %s`));
   if (!selections.empty) {
     queue.push(fmt`RETURNING %s`(selections.asSelect()));
   }
@@ -429,6 +429,47 @@ export function generateDelete(
   return {
     raw,
     parameters: [],
+    returning: !selections.empty,
+  };
+}
+
+export function generateUpdate(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): (SQLQuery & { returning: boolean }) | undefined {
+  const mapper = new SQLMapper(schema, name, name);
+  const setters: string[] = [];
+  const parameters: unknown[] = [];
+  const arg = root.arguments as {
+    _set?: Record<string, unknown>;
+    where?: Record<string, unknown>;
+  };
+  if (arg._set)
+    for (const [key, value] of Object.entries(arg._set)) {
+      setters.push(fmt`%q = ?`(mapper.namemap[key]));
+      parameters.push(value);
+    }
+  if (!setters.length) return void 0;
+  let where: string | undefined;
+  if (arg.where) where = mapper.where(arg.where);
+  const selections = new SQLSelections();
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      selections.merge(mapper.selections(field.subfields));
+    }
+  }
+  const queue: string[] = [];
+  queue.push(fmt`UPDATE %q SET`(name));
+  queue.push(setters.join(', '));
+  queue.push(trueMap(where, fmt`WHERE %s`));
+  if (!selections.empty) {
+    queue.push(fmt`RETURNING %s`(selections.asSelect()));
+  }
+  const raw = queue.filter(Boolean).join(' ');
+  return {
+    raw,
+    parameters,
     returning: !selections.empty,
   };
 }
