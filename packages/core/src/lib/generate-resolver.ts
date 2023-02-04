@@ -1,13 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective, MaybePromise } from '@graphql-tools/utils';
-import {
-  GraphQLNonNull,
-  GraphQLObjectType,
-  GraphQLOutputType,
-  GraphQLResolveInfo,
-  GraphQLSchema,
-  GraphQLString,
-} from 'graphql';
+import { GraphQLObjectType, GraphQLResolveInfo, GraphQLSchema } from 'graphql';
 import { getRelations } from './internals/utils.js';
 import { parseResolveInfo } from './selection-utils.js';
 import {
@@ -75,7 +68,7 @@ function populateType(schema: GraphQLSchema, name: string) {
           x,
           {
             [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
-              return resolveJSON(obj['$' + info.path.key], info.returnType);
+              return obj['$' + info.path.key];
             },
           }[key] as ResolverType,
         ];
@@ -110,7 +103,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQueryByPk(schema, parsed, item.name);
-        return trait.one(sql.raw, sql.parameters);
+        return smartConvert(trait.one(sql.raw, sql.parameters));
       },
       [item.name + '_aggregate'](
         _obj: any,
@@ -120,12 +113,12 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQueryAggregate(schema, parsed, item.name);
-        return trait.one(sql.raw, sql.parameters);
+        return smartConvert(trait.one(sql.raw, sql.parameters));
       },
       [item.name](_obj: any, args: any, _ctx: any, info: GraphQLResolveInfo) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQuery(schema, parsed, item.name);
-        return trait.all(sql.raw, sql.parameters);
+        return smartConvert(trait.all(sql.raw, sql.parameters));
       },
     });
     Object.assign(Root, {
@@ -141,7 +134,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateInsertOne(schema, parsed, item.name);
-        return trait.one(sql.raw, sql.parameters);
+        return smartConvert(trait.one(sql.raw, sql.parameters));
       },
       ['insert_' + item.name](
         _obj: any,
@@ -151,7 +144,10 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateInsert(schema, parsed, item.name);
-        if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
+        if (sql)
+          return smartConvertReturning(
+            trait.mutate(sql.raw, sql.parameters, sql.returning)
+          );
         else return { affected_rows: 0, returning: [] };
       },
       ['delete_' + item.name + '_by_pk'](
@@ -162,7 +158,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateDeleteByPk(schema, parsed, item.name);
-        return trait.one(sql.raw, sql.parameters);
+        return smartConvert(trait.one(sql.raw, sql.parameters));
       },
       ['delete_' + item.name](
         _obj: any,
@@ -172,7 +168,10 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateDelete(schema, parsed, item.name);
-        if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
+        if (sql)
+          return smartConvertReturning(
+            trait.mutate(sql.raw, sql.parameters, sql.returning)
+          );
         else return { affected_rows: 0, returning: [] };
       },
     });
@@ -188,7 +187,7 @@ function generateFieldResolver(
             x,
             {
               [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
-                return resolveJSON(obj['$' + info.path.key], info.returnType);
+                return obj['$' + info.path.key];
               },
             }[key] as ResolverType,
           ];
@@ -198,12 +197,25 @@ function generateFieldResolver(
   }
 }
 
-function resolveJSON(o: any, type: GraphQLOutputType): Record<string, unknown> {
-  if (
-    typeof o === 'string' &&
-    !(type === GraphQLString) &&
-    !(type instanceof GraphQLNonNull && type.ofType === GraphQLString)
-  )
-    return JSON.parse(o) as Record<string, unknown>;
+function smartConvert(o: any): any {
+  if (typeof o.then === 'function') {
+    return Promise.resolve(o).then(smartConvert);
+  }
+  if (Array.isArray(o)) {
+    return o.map(smartConvert);
+  }
+  for (const key in o) {
+    if (key.startsWith('$')) {
+      o[key] = JSON.parse(o[key]);
+    }
+  }
+  return o;
+}
+
+function smartConvertReturning(o: any): any {
+  if (typeof o.then === 'function') {
+    return Promise.resolve(o).then(smartConvertReturning);
+  }
+  o.returning = smartConvert(o.returning);
   return o;
 }
