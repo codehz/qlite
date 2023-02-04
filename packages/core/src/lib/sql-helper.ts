@@ -8,32 +8,13 @@ import {
   generateOrderBy,
   generateWhere,
 } from './internals/sql.js';
-import { getRelations } from './internals/utils.js';
+import { getRelations, Relation } from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
 
 export type SQLQuery = {
   raw: string;
   parameters: unknown[];
 };
-
-type Relation = {
-  name: string;
-  type: 'object' | 'array';
-  target: string;
-  defintions: {
-    from: string;
-    to: string;
-  }[];
-};
-
-function findRelation(
-  schema: GraphQLSchema,
-  type: GraphQLObjectType,
-  name: string
-) {
-  const relations = getRelations(type, schema) ?? [];
-  return relations.find((x) => x.name === name) as Relation | undefined;
-}
 
 function generateSubQuery(
   schema: GraphQLSchema,
@@ -55,8 +36,7 @@ function generateSubQuery(
       where?: Record<string, unknown>;
       order_by?: Record<string, string>;
     };
-    if (arg.where)
-      where.push(...generateWhere(arg.where, basename).filter(Boolean));
+    if (arg.where) where.push(...mapper.where(arg.where));
     const query = [
       fmt`SELECT json_group_array(json_object(%s)) FROM %q AS %q`(
         selections.asJSON(),
@@ -93,6 +73,8 @@ const QUERY_AGGREGATE = /^(.+)_aggregate$/;
 class SQLMapper {
   tablename: string;
   type: GraphQLObjectType;
+  #namemap: Record<string, string> = {};
+  #relations: Record<string, Relation> = {};
   constructor(
     public schema: GraphQLSchema,
     public name: string,
@@ -105,6 +87,18 @@ class SQLMapper {
     const entity = getDirective(schema, type, 'entity')?.[0];
     if (!entity) throw new Error('invalid entity ' + name);
     this.tablename = entity['name'] ?? name;
+    for (const [key, value] of Object.entries(this.fields)) {
+      const column = getDirective(this.schema, value, 'column')?.[0];
+      if (column) {
+        this.#namemap[key] = column['name'] ?? key;
+      }
+    }
+    const relations = getRelations(type, schema);
+    if (relations) {
+      for (const rel of relations) {
+        this.#relations[rel.name ?? rel.target] = rel;
+      }
+    }
   }
 
   get fields() {
@@ -116,35 +110,47 @@ class SQLMapper {
   }
 
   selections(queryfields: readonly FieldInfo[]) {
-    const fields = this.type.getFields();
     const selections = new SQLSelections();
     for (const subfield of queryfields) {
-      const resolved = fields[subfield.name];
-      if (resolved) {
-        const column = getDirective(this.schema, resolved, 'column')?.[0];
-        if (!column) continue;
-        selections.add(
-          subfield.name,
-          fmt`%q.%q`(this.alias, column['name'] ?? subfield.name)
+      let resolved;
+      if ((resolved = this.#namemap[subfield.name])) {
+        selections.add(subfield.name, fmt`%q.%q`(this.alias, resolved));
+      } else if ((resolved = this.#relations[subfield.name])) {
+        const subquery = generateSubQuery(
+          this.schema,
+          subfield,
+          this.alias,
+          resolved
         );
-      } else {
-        const relation = findRelation(this.schema, this.type, subfield.name);
-        if (relation) {
-          const subquery = generateSubQuery(
-            this.schema,
-            subfield,
-            this.alias,
-            relation
-          );
-          selections.add$(subfield.alias, subquery, true);
-        }
+        selections.add$(subfield.alias, subquery, true);
       }
     }
     return selections;
   }
 
+  aggregate(queryfields: readonly FieldInfo[]) {
+    const selections = new SQLSelections();
+    for (const subfield of queryfields) {
+      if (subfield.name === 'count') {
+        let count_arg = trueMap(
+          subfield.arguments['columns'] as string[],
+          (columns) =>
+            columns
+              .map((x) => fmt`%q`(fmt`%s.%s`(this.alias, this.#namemap[x])))
+              .join(', ')
+        );
+        if (subfield.arguments['distinct'] && count_arg)
+          count_arg = 'DISTINCT ' + count_arg;
+        selections.add$(
+          subfield.alias,
+          count_arg ? fmt`count(%s)`(count_arg) : `count(*)`
+        );
+      }
+    }
+  }
+
   where(arg: Record<string, unknown>) {
-    return generateWhere(arg, this.alias).filter(Boolean);
+    return generateWhere(arg, this.alias, this.#namemap).filter(Boolean);
   }
 }
 

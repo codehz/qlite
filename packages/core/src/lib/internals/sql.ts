@@ -72,31 +72,40 @@ function generateWhereCond(
 
 export function generateWhere(
   input: Record<string, unknown>,
-  self: string
+  self: string,
+  namemap: Record<string, string>
 ): string[] {
   const conds: string[] = [];
   for (const [key, value] of Object.entries(input)) {
     switch (key) {
       case '_and':
-        conds.push(...generateWhere(value as Record<string, unknown>, self));
+        conds.push(
+          ...generateWhere(value as Record<string, unknown>, self, namemap)
+        );
         break;
       case '_or':
         conds.push(
-          trueMap(generateWhere(value as Record<string, unknown>, self), (x) =>
-            fmt`(%s)`(x.join(' OR '))
+          trueMap(
+            generateWhere(value as Record<string, unknown>, self, namemap),
+            (x) => fmt`(%s)`(x.join(' OR '))
           )
         );
         break;
       case '_not':
         conds.push(
-          trueMap(generateWhere(value as Record<string, unknown>, self), (x) =>
-            fmt`NOT (%s)`(x.join(' AND '))
+          trueMap(
+            generateWhere(value as Record<string, unknown>, self, namemap),
+            (x) => fmt`NOT (%s)`(x.join(' AND '))
           )
         );
         break;
       default:
         conds.push(
-          generateWhereCond(key, value as Record<string, unknown>, self)
+          generateWhereCond(
+            namemap[key],
+            value as Record<string, unknown>,
+            self
+          )
         );
     }
   }
