@@ -39,6 +39,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     one(raw, parameters) {
       try {
         const stmt = db.prepare(raw);
+        console.log(raw);
         return stmt.get(...parameters);
       } catch (e) {
         if (e instanceof SqliteError) {
@@ -50,6 +51,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     all(raw, parameters) {
       try {
         const stmt = db.prepare(raw);
+        console.log(raw);
         return stmt.all(...parameters);
       } catch (e) {
         if (e instanceof SqliteError) {
@@ -61,6 +63,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     mutate(raw, parameters, do_returning: boolean) {
       try {
         const stmt = db.prepare(raw);
+        console.log(raw);
         return db.transaction(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (): { affected_rows: number; returning: Array<any> } => {

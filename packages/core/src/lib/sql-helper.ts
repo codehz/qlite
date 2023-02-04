@@ -211,7 +211,6 @@ export function generateQueryByPk(
     mapper.from,
     where.join(', ')
   );
-  console.log(raw);
   return { raw, parameters };
 }
 
@@ -254,7 +253,6 @@ export function generateQueryAggregate(
   ]
     .filter(Boolean)
     .join(' ');
-  console.log(raw);
   return { raw, parameters: [] };
 }
 
@@ -285,7 +283,6 @@ export function generateQuery(
   ]
     .filter(Boolean)
     .join(' ');
-  console.log(raw);
   return { raw, parameters: [] };
 }
 
@@ -328,7 +325,6 @@ export function generateInsertOne(
   }
   queue.push(fmt`RETURNING %s`(selections.asSelect()));
   const raw = queue.filter(Boolean).join(' ');
-  console.log(raw);
   return { raw, parameters };
 }
 
@@ -373,12 +369,37 @@ export function generateInsert(
     queue.push(fmt`RETURNING %s`(selections.asSelect()));
   }
   const raw = queue.filter(Boolean).join(' ');
-  console.log(raw);
+
   return {
     raw,
     parameters: [JSON.stringify(objects)],
     returning: !selections.empty,
   };
+}
+
+export function generateDeleteByPk(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery {
+  const mapper = new SQLMapper(schema, name, name);
+  const selections = mapper.selections(root.subfields);
+  const where: string[] = [];
+  const parameters: unknown[] = [];
+  for (const [key, value] of Object.entries(root.arguments)) {
+    const resolved = mapper.fields[key];
+    if (!resolved) throw new Error(`Cannot find "${key}" in type "${name}"`);
+    const column = getDirective(schema, resolved, 'column')?.[0];
+    if (!column) throw new Error('invalid primary key');
+    where.push(fmt`%q.%q = ?`(mapper.alias, column['name'] ?? key));
+    parameters.push(value);
+  }
+  const queue: string[] = [];
+  queue.push(fmt`DELETE FROM %q`(name));
+  queue.push(fmt`WHERE %s`(where.join(', ')));
+  queue.push(fmt`RETURNING %s`(selections.asSelect()));
+  const raw = queue.filter(Boolean).join(' ');
+  return { raw, parameters };
 }
 
 export function generateDelete(
@@ -392,7 +413,7 @@ export function generateDelete(
   };
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
-  const queue: string[] = []
+  const queue: string[] = [];
   queue.push(fmt`DELETE FROM %q`(name));
   queue.push(trueMap(where, fmt`WHERE %s`));
   const selections = new SQLSelections();
@@ -405,7 +426,6 @@ export function generateDelete(
     queue.push(fmt`RETURNING %s`(selections.asSelect()));
   }
   const raw = queue.filter(Boolean).join(' ');
-  console.log(raw);
   return {
     raw,
     parameters: [],

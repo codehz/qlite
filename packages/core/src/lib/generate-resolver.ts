@@ -17,6 +17,7 @@ import {
   generateInsertOne,
   generateInsert,
   generateDelete,
+  generateDeleteByPk,
 } from './sql-helper.js';
 
 export type SQLiteTrait = {
@@ -152,6 +153,16 @@ function generateFieldResolver(
         const sql = generateInsert(schema, parsed, item.name);
         if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
         else return { affected_rows: 0, returning: [] };
+      },
+      ['delete_' + item.name + '_by_pk'](
+        _obj: any,
+        args: any,
+        _ctx: any,
+        info: GraphQLResolveInfo
+      ) {
+        const parsed = parseResolveInfo(args, info);
+        const sql = generateDeleteByPk(schema, parsed, item.name);
+        return trait.one(sql.raw, sql.parameters);
       },
       ['delete_' + item.name](
         _obj: any,
