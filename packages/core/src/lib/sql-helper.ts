@@ -113,11 +113,13 @@ const QUERY_AGGREGATE = /^(.+)_aggregate$/;
 class SQLMapper {
   tablename: string;
   type: GraphQLObjectType;
+  alias: string;
   constructor(
     public schema: GraphQLSchema,
     public name: string,
-    public alias: string
+    alias: string
   ) {
+    this.alias = '@' + alias;
     const type = schema.getType(name);
     if (!type || !(type instanceof GraphQLObjectType))
       throw new Error('invalid type ' + name);
@@ -181,7 +183,7 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
       if (!resolved) throw new Error(`Cannot find "${key}" in type "${name}"`);
       const column = getDirective(schema, resolved, 'column')?.[0];
       if (!column) throw new Error('invalid primary key');
-      where.push(fmt`%q.%q = ?`(root.alias, column['name'] ?? key));
+      where.push(fmt`%q.%q = ?`(mapper.alias, column['name'] ?? key));
       parameters.push(value);
     }
     const raw = fmt`SELECT %s FROM %s WHERE %s`(
