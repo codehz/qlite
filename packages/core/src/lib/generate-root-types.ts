@@ -19,6 +19,7 @@ import {
   GraphQLOutputType,
   GraphQLScalarType,
   GraphQLSchema,
+  GraphQLType,
   InputValueDefinitionNode,
   Kind,
   ListTypeNode,
@@ -362,7 +363,7 @@ function generateRootType(
       columns.map((x) => [
         x.name,
         {
-          type: x.type as any as GraphQLInputType,
+          type: toNullable(x.type as any as GraphQLInputType),
         } as GraphQLInputFieldConfig,
       ])
     ),
@@ -588,6 +589,13 @@ function generateRootType(
       fields,
     });
   }
+}
+
+function toNullable<T extends GraphQLType>(input: T) {
+  if (input instanceof GraphQLNonNull) {
+    return input.ofType;
+  }
+  return input;
 }
 
 const TypeGen = {
