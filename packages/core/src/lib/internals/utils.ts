@@ -6,6 +6,8 @@ export function getColumns(item: GraphQLObjectType, schema: GraphQLSchema) {
     const { name, ...dir } = getDirective(schema, v, 'column')?.[0] as {
       name?: string;
       primary_key?: boolean;
+      alias_rowid?: boolean;
+      default?: string;
     };
     return { name: k, dbname: name, type: v.type, ...dir };
   });

@@ -7,6 +7,7 @@ import {
   SQLSelections,
   generateOrderBy,
   generateWhere,
+  quoteStr,
 } from './internals/sql.js';
 import { getRelations, Relation } from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
@@ -67,21 +68,23 @@ function generateSubQuery(
   throw new Error('Not implemented');
 }
 
-const QUERY_BY_PK = /^(.+)_by_pk$/;
-const QUERY_AGGREGATE = /^(.+)_aggregate$/;
-
 const SIMPLE_AGGREGATE_FUNCTIONS = ['min', 'max', 'avg', 'sum'];
 
-class SQLMapper {
+interface SQLMapperBase {
+  readonly type: GraphQLObjectType<any, any>;
+  readonly tablename: string;
+  readonly namemap: Record<string, string>;
+  readonly relations: Record<string, Relation>;
+  readonly schema: GraphQLSchema;
+  readonly name: string;
+}
+
+class SQLMapperInfo implements SQLMapperBase {
+  type: GraphQLObjectType<any, any>;
   tablename: string;
-  type: GraphQLObjectType;
-  #namemap: Record<string, string> = {};
-  #relations: Record<string, Relation> = {};
-  constructor(
-    public schema: GraphQLSchema,
-    public name: string,
-    public alias: string
-  ) {
+  namemap: Record<string, string> = {};
+  relations: Record<string, Relation> = {};
+  constructor(public schema: GraphQLSchema, public name: string) {
     const type = schema.getType(name);
     if (!type || !(type instanceof GraphQLObjectType))
       throw new Error('invalid type ' + name);
@@ -89,18 +92,39 @@ class SQLMapper {
     const entity = getDirective(schema, type, 'entity')?.[0];
     if (!entity) throw new Error('invalid entity ' + name);
     this.tablename = entity['name'] ?? name;
-    for (const [key, value] of Object.entries(this.fields)) {
+    const fields = this.type.getFields();
+    for (const [key, value] of Object.entries(fields)) {
       const column = getDirective(this.schema, value, 'column')?.[0];
       if (column) {
-        this.#namemap[key] = column['name'] ?? key;
+        this.namemap[key] = column['name'] ?? key;
       }
     }
     const relations = getRelations(type, schema);
     if (relations) {
       for (const rel of relations) {
-        this.#relations[rel.name ?? rel.target] = rel;
+        this.relations[rel.name ?? rel.target] = rel;
       }
     }
+  }
+  static cache = new WeakMap<GraphQLSchema, Record<string, SQLMapperBase>>();
+  static getCached(schema: GraphQLSchema, name: string) {
+    let storage = SQLMapperInfo.cache.get(schema);
+    if (!storage) SQLMapperInfo.cache.set(schema, (storage = {}));
+    return storage[name] ?? (storage[name] = new SQLMapperInfo(schema, name));
+  }
+}
+
+class SQLMapper implements SQLMapperBase {
+  readonly tablename!: string;
+  readonly type!: GraphQLObjectType;
+  readonly namemap!: Record<string, string>;
+  readonly relations!: Record<string, Relation>;
+  constructor(
+    public readonly schema: GraphQLSchema,
+    public readonly name: string,
+    public readonly alias: string
+  ) {
+    Object.assign(this, SQLMapperInfo.getCached(schema, name));
   }
 
   get fields() {
@@ -115,9 +139,9 @@ class SQLMapper {
     const selections = new SQLSelections();
     for (const subfield of queryfields) {
       let resolved;
-      if ((resolved = this.#namemap[subfield.name])) {
+      if ((resolved = this.namemap[subfield.name])) {
         selections.add(subfield.name, fmt`%q.%q`(this.alias, resolved));
-      } else if ((resolved = this.#relations[subfield.name])) {
+      } else if ((resolved = this.relations[subfield.name])) {
         const subquery = generateSubQuery(
           this.schema,
           subfield,
@@ -135,10 +159,10 @@ class SQLMapper {
     for (const field of queryfields) {
       if (field.name === 'count') {
         let count_arg = trueMap(
-          resolveInputArray(field.arguments['columns'] as string),
+          normalizeInputArray(field.arguments['columns'] as string),
           (columns) =>
             columns
-              .map((x) => fmt`%q.%q`(this.alias, this.#namemap[x]))
+              .map((x) => fmt`%q.%q`(this.alias, this.namemap[x]))
               .join(', ')
         );
         if (field.arguments['distinct'] && count_arg)
@@ -150,7 +174,7 @@ class SQLMapper {
       } else if (SIMPLE_AGGREGATE_FUNCTIONS.includes(field.name)) {
         const jsonsel = new SQLSelections();
         for (const subfield of field.subfields) {
-          const dbname = this.#namemap[subfield.name];
+          const dbname = this.namemap[subfield.name];
           jsonsel.add(subfield.name, fmt`%s(%q)`(field.name, dbname));
         }
         selections.add$(field.alias, fmt`json_object(%s)`(jsonsel.asJSON()));
@@ -160,102 +184,189 @@ class SQLMapper {
   }
 
   where(arg: Record<string, unknown>) {
-    return generateWhere(arg, this.alias, this.#namemap).filter(Boolean);
+    return generateWhere(arg, this.alias, this.namemap).filter(Boolean);
   }
 }
 
-export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
-  let matched;
-  if ((matched = root.name.match(QUERY_BY_PK))) {
-    const name = matched[1];
-    const mapper = new SQLMapper(schema, name, '@' + root.alias);
-    const selections = mapper.selections(root.subfields);
-    const where: string[] = [];
-    const parameters: unknown[] = [];
-    for (const [key, value] of Object.entries(root.arguments)) {
-      const resolved = mapper.fields[key];
-      if (!resolved) throw new Error(`Cannot find "${key}" in type "${name}"`);
-      const column = getDirective(schema, resolved, 'column')?.[0];
-      if (!column) throw new Error('invalid primary key');
-      where.push(fmt`%q.%q = ?`(mapper.alias, column['name'] ?? key));
-      parameters.push(value);
+export function generateQueryByPk(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery {
+  const mapper = new SQLMapper(schema, name, '@' + root.alias);
+  const selections = mapper.selections(root.subfields);
+  const where: string[] = [];
+  const parameters: unknown[] = [];
+  for (const [key, value] of Object.entries(root.arguments)) {
+    const resolved = mapper.fields[key];
+    if (!resolved) throw new Error(`Cannot find "${key}" in type "${name}"`);
+    const column = getDirective(schema, resolved, 'column')?.[0];
+    if (!column) throw new Error('invalid primary key');
+    where.push(fmt`%q.%q = ?`(mapper.alias, column['name'] ?? key));
+    parameters.push(value);
+  }
+  const raw = fmt`SELECT %s FROM %s WHERE %s`(
+    selections.asSelect(),
+    mapper.from,
+    where.join(', ')
+  );
+  console.log(raw);
+  return { raw, parameters };
+}
+
+export function generateQueryAggregate(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery {
+  const mapper = new SQLMapper(schema, name, '@' + root.alias);
+  const selections = new SQLSelections();
+  for (const field of root.subfields) {
+    if (field.name === 'nodes') {
+      const subsel = mapper.selections(field.subfields);
+      selections.add$(
+        field.alias,
+        fmt`json_group_array(json_object(%s))`(subsel.asJSON())
+      );
+    } else if (field.name === 'aggregate') {
+      const subsel = mapper.aggregate(field.subfields);
+      selections.add$(field.alias, fmt`json_object(%s)`(subsel.asJSON()));
     }
-    const raw = fmt`SELECT %s FROM %s WHERE %s`(
-      selections.asSelect(),
-      mapper.from,
-      where.join(', ')
+  }
+  const arg = root.arguments as {
+    limit?: number;
+    offset?: number;
+    where?: Record<string, unknown>;
+    order_by?: Record<string, string>;
+  };
+  const where: string[] = [];
+  if (arg.where) where.push(...mapper.where(arg.where));
+  const raw = [
+    fmt`SELECT %s`(selections.asSelect()),
+    fmt`FROM %s`(mapper.from),
+    trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
+    trueMap(arg.order_by, (x) =>
+      trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
+    ),
+    trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
+    trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  console.log(raw);
+  return { raw, parameters: [] };
+}
+
+export function generateQuery(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery {
+  const mapper = new SQLMapper(schema, name, '@' + root.alias);
+  const selections = mapper.selections(root.subfields);
+  const arg = root.arguments as {
+    limit?: number;
+    offset?: number;
+    where?: Record<string, unknown>;
+    order_by?: Record<string, string>;
+  };
+  const where: string[] = [];
+  if (arg.where) where.push(...mapper.where(arg.where));
+  const raw = [
+    fmt`SELECT %s`(selections.asSelect()),
+    fmt`FROM %s`(mapper.from),
+    trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
+    trueMap(arg.order_by, (x) =>
+      trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
+    ),
+    trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
+    trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  console.log(raw);
+  return { raw, parameters: [] };
+}
+
+export function generateInsertOne(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery {
+  const mapper = new SQLMapper(schema, name, name);
+  const selections = mapper.selections(root.subfields);
+  const args = root.arguments as {
+    object: Record<string, unknown>;
+    on_conflict: MaybeArray<{
+      target?: {
+        columns: MaybeArray<string>;
+        where?: Record<string, unknown>;
+      };
+      update_columns: MaybeArray<string>;
+      where?: Record<string, unknown>;
+    }>;
+  };
+  const on_conflicts = normalizeInputArray(args.on_conflict);
+  const column_template: string[] = [];
+  const parameters: unknown[] = [];
+  for (const [key, value] of Object.entries(args.object)) {
+    column_template.push(mapper.namemap[key]);
+    parameters.push(value);
+  }
+  const queue: string[] = [];
+  queue.push(fmt`INSERT INTO %q`(name));
+  if (column_template.length) {
+    queue.push(
+      fmt`(%s) VALUES (%s)`(
+        column_template.join(', '),
+        column_template.map(() => '?').join(', ')
+      )
     );
-    console.log(raw);
-    return { raw, parameters };
-  } else if ((matched = root.name.match(QUERY_AGGREGATE))) {
-    const name = matched[1];
-    const mapper = new SQLMapper(schema, name, '@' + root.alias);
-    const selections = new SQLSelections();
-    for (const field of root.subfields) {
-      if (field.name === 'nodes') {
-        const subsel = mapper.selections(field.subfields);
-        selections.add$(
-          field.alias,
-          fmt`json_group_array(json_object(%s))`(subsel.asJSON())
-        );
-      } else if (field.name === 'aggregate') {
-        const subsel = mapper.aggregate(field.subfields);
-        selections.add$(field.alias, fmt`json_object(%s)`(subsel.asJSON()));
+    if (on_conflicts) {
+      for (const cond of on_conflicts) {
+        queue.push('ON CONFLICT');
+        if (cond.target) {
+          const columns = normalizeInputArray(cond.target.columns);
+          if (columns) {
+            queue.push(fmt`(%s)`(columns.map((x) => quoteStr(x)).join(', ')));
+            if (cond.where) {
+              queue.push(fmt`WHERE %s`(mapper.where(cond.where).join(' AND ')));
+            }
+          }
+        }
+        queue.push('DO');
+        const updates = normalizeInputArray(cond.update_columns);
+        if (updates) {
+          queue.push('UPDATE SET');
+          queue.push(
+            updates
+              .map((column) => {
+                const mapped_name = mapper.namemap[column];
+                return fmt`%q = excluded.%q`(mapped_name, mapped_name);
+              })
+              .join(', ')
+          );
+          if (cond.where) {
+            queue.push(fmt`WHERE %s`(mapper.where(cond.where).join(' AND ')));
+          }
+        } else {
+          queue.push('NOTHING');
+        }
       }
     }
-    const arg = root.arguments as {
-      limit?: number;
-      offset?: number;
-      where?: Record<string, unknown>;
-      order_by?: Record<string, string>;
-    };
-    const where: string[] = [];
-    if (arg.where) where.push(...mapper.where(arg.where));
-    const raw = [
-      fmt`SELECT %s`(selections.asSelect()),
-      fmt`FROM %s`(mapper.from),
-      trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
-      trueMap(arg.order_by, (x) =>
-        trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
-      ),
-      trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
-      trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
-    ]
-      .filter(Boolean)
-      .join(' ');
-    console.log(raw);
-    return { raw, parameters: [] };
   } else {
-    const name = root.name;
-    const mapper = new SQLMapper(schema, name, '@' + root.alias);
-    const selections = mapper.selections(root.subfields);
-    const arg = root.arguments as {
-      limit?: number;
-      offset?: number;
-      where?: Record<string, unknown>;
-      order_by?: Record<string, string>;
-    };
-    const where: string[] = [];
-    if (arg.where) where.push(...mapper.where(arg.where));
-    const raw = [
-      fmt`SELECT %s`(selections.asSelect()),
-      fmt`FROM %s`(mapper.from),
-      trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
-      trueMap(arg.order_by, (x) =>
-        trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
-      ),
-      trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
-      trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
-    ]
-      .filter(Boolean)
-      .join(' ');
-    console.log(raw);
-    return { raw, parameters: [] };
+    queue.push('DEFAULT VALUES');
   }
+  queue.push(fmt`RETURNING %s`(selections.asSelect()));
+  const raw = queue.filter(Boolean).join(' ');
+  console.log(raw);
+  return { raw, parameters };
 }
 
-function resolveInputArray<T>(x: T | T[]): T[] | undefined {
+type MaybeArray<T> = T | T[];
+
+function normalizeInputArray<T>(x: MaybeArray<T> | undefined): T[] | undefined {
   if (x == null) return void 0;
-  if (Array.isArray(x)) return x;
+  if (Array.isArray(x)) return x.length ? x : void 0;
   return [x];
 }

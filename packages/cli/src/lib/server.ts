@@ -25,6 +25,7 @@ function cloneSchema(schema: GraphQLSchema) {
 
 export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
   const db = new Database(config.db ?? ':memory:');
+  const get_changes = db.prepare('select changes() as affected_rows;');
   if (!config.db) {
     const migration = generateSqlInitialMigration(schema);
     db.exec(migration);
@@ -37,11 +38,25 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
   const resolver = generateResolver(cloneSchema(extended_schema), {
     one(raw, parameters) {
       const stmt = db.prepare(raw);
-      return stmt.get(parameters);
+      return stmt.get(...parameters);
     },
     all(raw, parameters) {
       const stmt = db.prepare(raw);
-      return stmt.all(parameters);
+      return stmt.all(...parameters);
+    },
+    mutate(raw, parameters) {
+      const stmt = db.prepare(raw);
+      return db.transaction(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (): { affected_rows: number; returning: Array<any> } => {
+          const returning = stmt.all(...parameters);
+          const affected_rows = get_changes.get().affected_rows as number;
+          return {
+            affected_rows,
+            returning,
+          };
+        }
+      )();
     },
   });
   const yoga = createYoga({

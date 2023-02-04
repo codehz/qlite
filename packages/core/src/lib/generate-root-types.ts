@@ -304,12 +304,24 @@ function generateRootType(
   const insert_input = new GraphQLInputObjectType({
     name: NameMap.insert_input(item.name),
     fields: Object.fromEntries(
-      columns.map((x) => [
-        x.name,
-        {
-          type: x.type as any as GraphQLInputType,
-        } as GraphQLInputFieldConfig,
-      ])
+      columns.map((x): [string, GraphQLInputFieldConfig] => {
+        if (x.type instanceof GraphQLNonNull) {
+          if ((x.primary_key && x.alias_rowid) || x.default != null) {
+            return [
+              x.name,
+              {
+                type: x.type.ofType as any as GraphQLInputType,
+              },
+            ];
+          }
+        }
+        return [
+          x.name,
+          {
+            type: x.type as any as GraphQLInputType,
+          },
+        ];
+      })
     ),
     description: `input type for inserting data into table ${item.name}`,
   });
@@ -434,7 +446,7 @@ function generateRootType(
             description: 'the rows to be inserted',
           },
           on_conflict: {
-            type: on_conflict,
+            type: TypeGen.non_null_list(on_conflict),
             description: 'upsert condition',
           },
         },
@@ -451,7 +463,7 @@ function generateRootType(
             description: 'the row to be inserted',
           },
           on_conflict: {
-            type: on_conflict,
+            type: TypeGen.non_null_list(on_conflict),
             description: 'upsert condition',
           },
         },

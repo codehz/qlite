@@ -1,13 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getDirective } from '@graphql-tools/utils';
+import { getDirective, MaybePromise } from '@graphql-tools/utils';
 import { GraphQLObjectType, GraphQLResolveInfo, GraphQLSchema } from 'graphql';
 import { getRelations } from './internals/utils.js';
 import { parseResolveInfo } from './selection-utils.js';
-import { generateSQL } from './sql-helper.js';
+import {
+  generateQueryByPk,
+  generateQueryAggregate,
+  generateQuery,
+  generateInsertOne,
+} from './sql-helper.js';
 
 export type SQLiteTrait = {
   one(sql: string, parameters: any[]): any;
   all(sql: string, parameters: any[]): any;
+  mutate(
+    sql: string,
+    parameters: any[]
+  ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
 };
 
 type ResolverType = (
@@ -19,10 +28,15 @@ type ResolverType = (
 
 export function generateResolver(schema: GraphQLSchema, trait: SQLiteTrait) {
   const Query: Record<string, ResolverType> = {};
-  const Root: Record<string, Record<string, ResolverType>> = { Query };
+  const Mutation: Record<string, ResolverType> = {};
+  const Root: Record<string, Record<string, ResolverType>> = {
+    Query,
+    Mutation,
+  };
   const ctx = {
     trait,
     Query,
+    Mutation,
     Root,
   };
   for (const item of Object.values(schema.getTypeMap())) {
@@ -31,7 +45,7 @@ export function generateResolver(schema: GraphQLSchema, trait: SQLiteTrait) {
         | { exported: boolean }
         | undefined;
       if (entity) {
-        generateQuery(entity, item, schema, ctx);
+        generateFieldResolver(entity, item, schema, ctx);
       }
     }
   }
@@ -62,17 +76,19 @@ function populateType(schema: GraphQLSchema, name: string) {
   };
 }
 
-function generateQuery(
+function generateFieldResolver(
   entity: { exported: boolean },
   item: GraphQLObjectType,
   schema: GraphQLSchema,
   {
     trait,
     Query,
+    Mutation,
     Root,
   }: {
     trait: SQLiteTrait;
     Query: Record<string, ResolverType>;
+    Mutation: Record<string, ResolverType>;
     Root: Record<string, Record<string, ResolverType>>;
   }
 ) {
@@ -85,7 +101,7 @@ function generateQuery(
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
-        const sql = generateSQL(schema, parsed);
+        const sql = generateQueryByPk(schema, parsed, item.name);
         return trait.one(sql.raw, sql.parameters);
       },
       [item.name + '_aggregate'](
@@ -95,18 +111,30 @@ function generateQuery(
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
-        const sql = generateSQL(schema, parsed);
+        const sql = generateQueryAggregate(schema, parsed, item.name);
         return trait.one(sql.raw, sql.parameters);
       },
       [item.name](_obj: any, args: any, _ctx: any, info: GraphQLResolveInfo) {
         const parsed = parseResolveInfo(args, info);
-        const sql = generateSQL(schema, parsed);
+        const sql = generateQuery(schema, parsed, item.name);
         return trait.all(sql.raw, sql.parameters);
       },
     });
     Object.assign(Root, {
       ...populateType(schema, item.name + '_aggregate'),
       ...populateType(schema, item.name + '_aggregate_fields'),
+    });
+    Object.assign(Mutation, {
+      ['insert_' + item.name + '_one'](
+        _obj: any,
+        args: any,
+        _ctx: any,
+        info: GraphQLResolveInfo
+      ) {
+        const parsed = parseResolveInfo(args, info);
+        const sql = generateInsertOne(schema, parsed, item.name);
+        return trait.one(sql.raw, sql.parameters);
+      },
     });
   }
   const relations = getRelations(item, schema);
