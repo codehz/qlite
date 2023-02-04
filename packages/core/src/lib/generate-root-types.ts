@@ -335,6 +335,7 @@ function generateRootType(
       },
       update_columns: {
         type: TypeGen.non_null_non_null_list(select_column),
+        defaultValue: [],
       },
       where: {
         type: bool_exp,
