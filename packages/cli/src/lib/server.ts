@@ -3,12 +3,12 @@ import {
   generateRootTypes,
   generateSqlInitialMigration,
 } from '@qlite/core';
-import { buildSchema, GraphQLSchema } from 'graphql';
+import { buildSchema, GraphQLError, GraphQLSchema } from 'graphql';
 import { renderGraphiQL } from '@graphql-yoga/render-graphiql';
 import { createServer } from 'node:http';
 import { createYoga } from 'graphql-yoga';
 import { makeExecutableSchema } from '@graphql-tools/schema';
-import Database from 'better-sqlite3';
+import Database, { SqliteError } from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { printSchemaWithDirectives } from '@graphql-tools/utils';
 
@@ -37,35 +37,56 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
   const [extended_schema, typedefs] = generateRootTypes(schema);
   const resolver = generateResolver(cloneSchema(extended_schema), {
     one(raw, parameters) {
-      const stmt = db.prepare(raw);
-      return stmt.get(...parameters);
+      try {
+        const stmt = db.prepare(raw);
+        return stmt.get(...parameters);
+      } catch (e) {
+        if (e instanceof SqliteError) {
+          throw new GraphQLError(e.message);
+        }
+        throw e;
+      }
     },
     all(raw, parameters) {
-      const stmt = db.prepare(raw);
-      return stmt.all(...parameters);
+      try {
+        const stmt = db.prepare(raw);
+        return stmt.all(...parameters);
+      } catch (e) {
+        if (e instanceof SqliteError) {
+          throw new GraphQLError(e.message);
+        }
+        throw e;
+      }
     },
     mutate(raw, parameters, do_returning: boolean) {
-      const stmt = db.prepare(raw);
-      return db.transaction(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (): { affected_rows: number; returning: Array<any> } => {
-          if (do_returning) {
-            const returning = stmt.all(...parameters);
-            const affected_rows = get_changes.get().affected_rows as number;
-            return {
-              affected_rows,
-              returning,
-            };
-          } else {
-            stmt.run(...parameters);
-            const affected_rows = get_changes.get().affected_rows as number;
-            return {
-              affected_rows,
-              returning: [],
-            };
+      try {
+        const stmt = db.prepare(raw);
+        return db.transaction(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (): { affected_rows: number; returning: Array<any> } => {
+            if (do_returning) {
+              const returning = stmt.all(...parameters);
+              const affected_rows = get_changes.get().affected_rows as number;
+              return {
+                affected_rows,
+                returning,
+              };
+            } else {
+              stmt.run(...parameters);
+              const affected_rows = get_changes.get().affected_rows as number;
+              return {
+                affected_rows,
+                returning: [],
+              };
+            }
           }
+        )();
+      } catch (e) {
+        if (e instanceof SqliteError) {
+          throw new GraphQLError(e.message);
         }
-      )();
+        throw e;
+      }
     },
   });
   const yoga = createYoga({
