@@ -243,7 +243,7 @@ export function generateQueryAggregate(
     fmt`FROM %s`(mapper.from),
     trueMap(where, fmt`WHERE %s`),
     trueMap(arg.order_by, (x) =>
-      trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
+      trueMap(generateOrderBy(x, mapper.alias), (x) => fmt`ORDER BY %s`(x.join(', ')))
     ),
     trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
     trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
@@ -273,7 +273,7 @@ export function generateQuery(
     fmt`FROM %s`(mapper.from),
     trueMap(where, fmt`WHERE %s`),
     trueMap(arg.order_by, (x) =>
-      trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
+      trueMap(generateOrderBy(x, mapper.alias), (x) => fmt`ORDER BY %s`(x.join(', ')))
     ),
     trueMap(arg.limit, fmt`LIMIT %s`),
     trueMap(arg.offset, fmt`OFFSET %s`),
