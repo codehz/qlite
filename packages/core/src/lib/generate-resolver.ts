@@ -25,6 +25,15 @@ export type SQLiteTrait = {
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
 };
 
+export function fixupResult(o: Record<string, unknown>) {
+  for (const key in o) {
+    if (key.startsWith('$')) {
+      o[key] = JSON.parse(o[key] as string);
+    }
+  }
+  return o;
+}
+
 type ResolverType = (
   obj: any,
   args: Record<string, any>,
@@ -105,7 +114,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQueryByPk(schema, parsed, item.name);
-        return smartConvert(trait.one(sql.raw, sql.parameters));
+        return trait.one(sql.raw, sql.parameters);
       },
       [item.name + '_aggregate'](
         _obj: any,
@@ -115,12 +124,12 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQueryAggregate(schema, parsed, item.name);
-        return smartConvert(trait.one(sql.raw, sql.parameters));
+        return trait.one(sql.raw, sql.parameters);
       },
       [item.name](_obj: any, args: any, _ctx: any, info: GraphQLResolveInfo) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQuery(schema, parsed, item.name);
-        return smartConvert(trait.all(sql.raw, sql.parameters));
+        return trait.all(sql.raw, sql.parameters);
       },
     });
     Object.assign(Root, {
@@ -136,7 +145,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateInsertOne(schema, parsed, item.name);
-        return smartConvert(trait.one(sql.raw, sql.parameters));
+        return trait.one(sql.raw, sql.parameters);
       },
       ['insert_' + item.name](
         _obj: any,
@@ -146,10 +155,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateInsert(schema, parsed, item.name);
-        if (sql)
-          return smartConvertReturning(
-            trait.mutate(sql.raw, sql.parameters, sql.returning)
-          );
+        if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
         else return { affected_rows: 0, returning: [] };
       },
       ['delete_' + item.name + '_by_pk'](
@@ -160,7 +166,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateDeleteByPk(schema, parsed, item.name);
-        return smartConvert(trait.one(sql.raw, sql.parameters));
+        return trait.one(sql.raw, sql.parameters);
       },
       ['delete_' + item.name](
         _obj: any,
@@ -170,10 +176,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateDelete(schema, parsed, item.name);
-        if (sql)
-          return smartConvertReturning(
-            trait.mutate(sql.raw, sql.parameters, sql.returning)
-          );
+        if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
         else return { affected_rows: 0, returning: [] };
       },
       ['update_' + item.name](
@@ -184,10 +187,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateUpdate(schema, parsed, item.name);
-        if (sql)
-          return smartConvertReturning(
-            trait.mutate(sql.raw, sql.parameters, sql.returning)
-          );
+        if (sql) return trait.mutate(sql.raw, sql.parameters, sql.returning);
         else return { affected_rows: 0, returning: [] };
       },
       ['update_' + item.name + '_by_pk'](
@@ -198,7 +198,7 @@ function generateFieldResolver(
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateUpdateByPk(schema, parsed, item.name);
-        return smartConvert(trait.one(sql.raw, sql.parameters));
+        return trait.one(sql.raw, sql.parameters);
       },
     });
   }
@@ -221,28 +221,4 @@ function generateFieldResolver(
       ),
     });
   }
-}
-
-function smartConvert(o: any): any {
-  if (o == null) return o;
-  if (typeof o.then === 'function') {
-    return Promise.resolve(o).then(smartConvert);
-  }
-  if (Array.isArray(o)) {
-    return o.map(smartConvert);
-  }
-  for (const key in o) {
-    if (key.startsWith('$')) {
-      o[key] = JSON.parse(o[key]);
-    }
-  }
-  return o;
-}
-
-function smartConvertReturning(o: any): any {
-  if (typeof o.then === 'function') {
-    return Promise.resolve(o).then(smartConvertReturning);
-  }
-  o.returning = smartConvert(o.returning);
-  return o;
 }

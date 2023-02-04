@@ -1,4 +1,5 @@
 import {
+  fixupResult,
   generateResolver,
   generateRootTypes,
   generateSqlInitialMigration,
@@ -40,7 +41,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
       try {
         const stmt = db.prepare(raw);
         console.log(raw);
-        return stmt.get(...parameters);
+        return fixupResult(stmt.get(...parameters));
       } catch (e) {
         if (e instanceof SqliteError) {
           throw new GraphQLError(e.message);
@@ -52,7 +53,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
       try {
         const stmt = db.prepare(raw);
         console.log(raw);
-        return stmt.all(...parameters);
+        return stmt.all(...parameters).map(fixupResult);
       } catch (e) {
         if (e instanceof SqliteError) {
           throw new GraphQLError(e.message);
@@ -68,7 +69,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (): { affected_rows: number; returning: Array<any> } => {
             if (do_returning) {
-              const returning = stmt.all(...parameters);
+              const returning = stmt.all(...parameters).map(fixupResult);
               const affected_rows = get_changes.get().affected_rows as number;
               return {
                 affected_rows,
