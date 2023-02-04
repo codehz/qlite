@@ -42,28 +42,8 @@ function generateSubQuery(
   relation: Relation
 ): string {
   const basename = fmt`%s.%s`(parent, root.alias);
-  const type = schema.getType(relation.target);
-  if (!type || !(type instanceof GraphQLObjectType))
-    throw new Error('invalid type ' + relation.target);
-  const fields = type.getFields();
-  const json_fields = new SQLSelections();
-  for (const subfield of root.subfields) {
-    const resolved = fields[subfield.name];
-    if (resolved) {
-      const column = getDirective(schema, resolved, 'column')?.[0];
-      if (!column) continue;
-      json_fields.add(
-        subfield.name,
-        fmt`%q.%q`(basename, column['name'] ?? subfield.name)
-      );
-    } else {
-      const relation = findRelation(schema, type, subfield.name);
-      if (relation) {
-        const subquery = generateSubQuery(schema, subfield, basename, relation);
-        json_fields.add$(subfield.alias, subquery, true);
-      }
-    }
-  }
+  const mapper = new SQLMapper(schema, relation.target, basename);
+  const selections = mapper.selections(root.subfields);
   const where: string[] = [];
   for (const { from, to } of relation.defintions) {
     where.push(fmt`%q.%q = %q.%q`(parent, from, basename, to));
@@ -79,7 +59,7 @@ function generateSubQuery(
       where.push(...generateWhere(arg.where, basename).filter(Boolean));
     const query = [
       fmt`SELECT json_group_array(json_object(%s)) FROM %q AS %q`(
-        json_fields.asJSON(),
+        selections.asJSON(),
         relation.target,
         basename
       ),
@@ -97,7 +77,7 @@ function generateSubQuery(
     return fmt`coalesce((%s), %t)`(query, '[]');
   } else if (relation.type === 'object') {
     const query = fmt`SELECT json_object(%s) FROM %q AS %q WHERE %s LIMIT 1`(
-      json_fields.asJSON(),
+      selections.asJSON(),
       relation.target,
       basename,
       where.join(' AND ')
@@ -113,13 +93,11 @@ const QUERY_AGGREGATE = /^(.+)_aggregate$/;
 class SQLMapper {
   tablename: string;
   type: GraphQLObjectType;
-  alias: string;
   constructor(
     public schema: GraphQLSchema,
     public name: string,
-    alias: string
+    public alias: string
   ) {
-    this.alias = '@' + alias;
     const type = schema.getType(name);
     if (!type || !(type instanceof GraphQLObjectType))
       throw new Error('invalid type ' + name);
@@ -158,7 +136,7 @@ class SQLMapper {
             this.alias,
             relation
           );
-          selections.add$(subfield.alias, subquery);
+          selections.add$(subfield.alias, subquery, true);
         }
       }
     }
@@ -174,7 +152,7 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
   let matched;
   if ((matched = root.name.match(QUERY_BY_PK))) {
     const name = matched[1];
-    const mapper = new SQLMapper(schema, name, root.alias);
+    const mapper = new SQLMapper(schema, name, '@' + root.alias);
     const selections = mapper.selections(root.subfields);
     const where: string[] = [];
     const parameters: unknown[] = [];
@@ -195,7 +173,7 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
     return { raw, parameters };
   } else if ((matched = root.name.match(QUERY_AGGREGATE))) {
     const name = matched[1];
-    const mapper = new SQLMapper(schema, name, root.alias);
+    const mapper = new SQLMapper(schema, name, '@' + root.alias);
     const selections = new SQLSelections();
     for (const field of root.subfields) {
       if (field.name === 'nodes') {
@@ -230,7 +208,7 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
     return { raw, parameters: [] };
   } else {
     const name = root.name;
-    const mapper = new SQLMapper(schema, name, root.alias);
+    const mapper = new SQLMapper(schema, name, '@' + root.alias);
     const selections = mapper.selections(root.subfields);
     const arg = root.arguments as {
       limit?: number;
