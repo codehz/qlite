@@ -6,12 +6,14 @@ import {
   GraphQLBoolean,
   GraphQLEnumType,
   GraphQLFieldConfig,
+  GraphQLInputFieldConfig,
   GraphQLInputObjectType,
   GraphQLInputType,
   GraphQLInt,
   GraphQLList,
   GraphQLNamedType,
   GraphQLNonNull,
+  GraphQLNullableType,
   GraphQLObjectType,
   GraphQLOutputType,
   GraphQLScalarType,
@@ -40,16 +42,19 @@ const OrderBy = new GraphQLEnumType({
 
 type GeneratorContext = {
   queries: [string, GraphQLFieldConfig<any, any>][];
+  mutations: [string, GraphQLFieldConfig<any, any>][];
   types: Record<string, GraphQLNamedType>;
   extended: DefinitionNode[];
 };
 
 export function generateRootTypes(schema: GraphQLSchema) {
   const queries: [string, GraphQLFieldConfig<any, any>][] = [];
+  const mutations: [string, GraphQLFieldConfig<any, any>][] = [];
   const types: Record<string, GraphQLNamedType> = {};
   const extended: DefinitionNode[] = [];
   const ctx = {
     queries,
+    mutations,
     types,
     extended,
   };
@@ -59,7 +64,7 @@ export function generateRootTypes(schema: GraphQLSchema) {
         | { exported: boolean }
         | undefined;
       if (entity) {
-        generateQuery(entity, item, schema, ctx);
+        generateRootType(entity, item, schema, ctx);
       }
     }
   }
@@ -67,11 +72,16 @@ export function generateRootTypes(schema: GraphQLSchema) {
     name: 'Query',
     fields: Object.fromEntries(queries),
   });
+  const Mutation = new GraphQLObjectType({
+    name: 'Mutation',
+    fields: Object.fromEntries(mutations),
+  });
   const output = new GraphQLSchema({
     directives: schema.getDirectives(),
     types: [
       ...Object.values(schema.getTypeMap()),
       Query,
+      Mutation,
       ...Object.values(types),
     ],
   });
@@ -118,23 +128,39 @@ function addTypes(
   types[value.name] = value;
 }
 
-const NameMap = {
-  bool_exp(name: string) {
-    return name + '_bool_exp';
-  },
-  order_by(name: string) {
-    return name + '_order_by';
-  },
-  select_column(name: string) {
-    return name + '_select_column';
-  },
+type NameMapType<T extends string> = {
+  [input in T]: <S extends string>(name: S) => `${S}_${T}`;
 };
 
-function generateQuery(
+const NameMap = new Proxy(
+  {},
+  {
+    get(_, p: string) {
+      return (name: string) => name + '_' + p;
+    },
+  }
+) as NameMapType<
+  | 'bool_exp'
+  | 'order_by'
+  | 'select_column'
+  | 'mutation_response'
+  | 'insert_input'
+  | 'on_conflict'
+  | 'conflict_target'
+  | 'set_input'
+  | 'pk_columns_input'
+  | 'updates'
+  | 'max_fields'
+  | 'min_fields'
+  | 'aggregate_fields'
+  | 'aggregate'
+>;
+
+function generateRootType(
   entity: { exported: boolean },
   item: GraphQLObjectType,
   schema: GraphQLSchema,
-  { queries, types, extended }: GeneratorContext
+  { queries, mutations, types, extended }: GeneratorContext
 ) {
   const columns = getColumns(item, schema);
   const bool_exp: GraphQLInputObjectType = new GraphQLInputObjectType({
@@ -147,32 +173,283 @@ function generateQuery(
         columns.map((x) => [x.name, { type: getComparisonExp(x.type, types) }])
       ),
     }),
+    description: `Boolean expression to filter rows from the table ${item.name}. All fields are combined with a logical 'AND'.`,
   });
   addTypes(types, bool_exp);
   const order_by: GraphQLInputObjectType = new GraphQLInputObjectType({
     name: NameMap.order_by(item.name),
     fields: Object.fromEntries(columns.map((x) => [x.name, { type: OrderBy }])),
+    description: `Ordering options when selecting data from ${item.name}`,
   });
   addTypes(types, order_by);
   const select_column: GraphQLEnumType = new GraphQLEnumType({
     name: NameMap.select_column(item.name),
     values: Object.fromEntries(columns.map((x) => [x.name, {}])),
+    description: `select columns of table ${item.name}`
   });
   addTypes(types, select_column);
+  const minmaxfields = Object.fromEntries(
+    columns.map((x) => [
+      x.name,
+      {
+        type: x.type,
+      },
+    ])
+  );
+  const min_fields = new GraphQLObjectType({
+    name: NameMap.min_fields(item.name),
+    fields: minmaxfields,
+    description: `aggregate min on columns`
+  });
+  addTypes(types, min_fields);
+  const max_fields = new GraphQLObjectType({
+    name: NameMap.max_fields(item.name),
+    fields: minmaxfields,
+    description: `aggregate max on columns`
+  });
+  addTypes(types, max_fields);
+  const aggregate_fields = new GraphQLObjectType({
+    name: NameMap.aggregate_fields(item.name),
+    fields: {
+      count: {
+        type: GraphQLInt,
+        args: {
+          columns: {
+            type: TypeGen.non_null_list(select_column),
+          },
+          distinct: {
+            type: GraphQLBoolean,
+          },
+        },
+      },
+      min: {
+        type: new GraphQLNonNull(min_fields),
+      },
+      max: {
+        type: new GraphQLNonNull(max_fields),
+      },
+    },
+    description: `aggregate fields of ${item.name}`,
+  });
+  addTypes(types, aggregate_fields);
+  const aggregate = new GraphQLObjectType({
+    name: NameMap.aggregate(item.name),
+    fields: {
+      aggregate: {
+        type: aggregate_fields,
+      },
+      nodes: {
+        type: TypeGen.non_null_non_null_list(item),
+      },
+    },
+    description: `aggregate fields of ${item.name}`,
+  });
+  addTypes(types, aggregate);
+  const mutation_response: GraphQLObjectType = new GraphQLObjectType({
+    name: NameMap.mutation_response(item.name),
+    fields: {
+      affected_rows: {
+        type: new GraphQLNonNull(GraphQLInt),
+        description: 'number of rows affected by the mutation',
+      },
+      returning: {
+        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(item))),
+        description: 'data from the rows affected by the mutation',
+      },
+    },
+    description: `response of any mutation on the table ${item.name}`,
+  });
+  addTypes(types, mutation_response);
+  const insert_input = new GraphQLInputObjectType({
+    name: NameMap.insert_input(item.name),
+    fields: Object.fromEntries(
+      columns.map((x) => [
+        x.name,
+        {
+          type: x.type as any as GraphQLInputType,
+        } as GraphQLInputFieldConfig,
+      ])
+    ),
+    description: `input type for inserting data into table ${item.name}`
+  });
+  addTypes(types, insert_input);
+  const conflict_target = new GraphQLInputObjectType({
+    name: NameMap.conflict_target(item.name),
+    fields: {
+      columns: {
+        type: TypeGen.non_null_non_null_list(select_column),
+      },
+      where: {
+        type: bool_exp,
+      },
+    },
+    description: `conflict target for table ${item.name}`
+  });
+  addTypes(types, conflict_target);
+  const on_conflict = new GraphQLInputObjectType({
+    name: NameMap.on_conflict(item.name),
+    fields: {
+      target: {
+        type: conflict_target,
+      },
+      update_columns: {
+        type: TypeGen.non_null_non_null_list(select_column),
+      },
+      where: {
+        type: bool_exp,
+      },
+    },
+    description: `on_conflict condition type for table ${item.name}`
+  });
+  addTypes(types, on_conflict);
+  const set_input = new GraphQLInputObjectType({
+    name: NameMap.set_input(item.name),
+    fields: Object.fromEntries(
+      columns.map((x) => [
+        x.name,
+        {
+          type: x.type as any as GraphQLInputType,
+        } as GraphQLInputFieldConfig,
+      ])
+    ),
+    description: `input type for updating data in table ${item.name}`
+  });
+  addTypes(types, set_input);
+  const updates_fields = {
+    _set: {
+      type: set_input,
+      description: 'sets the columns of the filtered rows to the given values',
+    },
+    where: {
+      type: bool_exp,
+      description: 'filter the rows which have to be updated',
+    },
+  };
+  const updates = new GraphQLInputObjectType({
+    name: NameMap.updates(item.name),
+    fields: updates_fields,
+  });
+  addTypes(types, updates);
+  const pks = columns.filter((x) => !!x.primary_key);
+  let pk_columns_input: GraphQLInputObjectType;
+  if (pks.length) {
+    pk_columns_input = new GraphQLInputObjectType({
+      name: NameMap.pk_columns_input(item.name),
+      fields: Object.fromEntries(
+        pks.map((x) => [
+          x.name,
+          {
+            type: x.type as any as GraphQLInputType,
+          } as GraphQLInputFieldConfig,
+        ])
+      ),
+      description: `primary key columns input for table: ${item.name}`,
+    });
+    addTypes(types, pk_columns_input);
+  }
   if (entity.exported) {
+    const query_args = {
+      limit: {
+        type: GraphQLInt,
+        description: 'limit the number of rows returned',
+      },
+      offset: {
+        type: GraphQLInt,
+        description: 'skip the first n rows. Use only with order_by',
+      },
+      where: {
+        type: bool_exp,
+        description: 'filter the rows returned',
+      },
+      order_by: {
+        type: order_by,
+        description: 'sort the rows by one or more columns',
+      },
+    };
     queries.push([
       item.name,
       {
-        type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(item))),
-        args: {
-          limit: { type: GraphQLInt },
-          offset: { type: GraphQLInt },
-          where: { type: bool_exp },
-          order_by: { type: order_by },
-        },
+        type: TypeGen.non_null_non_null_list(item),
+        args: query_args,
+        description: `fetch data from the table: ${item.name}`,
       },
     ]);
-    const pks = columns.filter((x) => !!x.primary_key);
+    queries.push([
+      item.name + '_aggregate',
+      {
+        type: new GraphQLNonNull(aggregate),
+        args: query_args,
+        description: `fetch aggregated fields from the table: ${item.name}`,
+      },
+    ]);
+    mutations.push([
+      `insert_${item.name}`,
+      {
+        type: mutation_response,
+        args: {
+          objects: {
+            type: TypeGen.non_null_non_null_list(insert_input),
+            description: 'the rows to be inserted',
+          },
+          on_conflict: {
+            type: on_conflict,
+            description: 'upsert condition',
+          },
+        },
+        description: `insert data into the table: ${item.name}`,
+      },
+    ]);
+    mutations.push([
+      `insert_${item.name}_one`,
+      {
+        type: item,
+        args: {
+          object: {
+            type: new GraphQLNonNull(insert_input),
+            description: 'the row to be inserted',
+          },
+          on_conflict: {
+            type: on_conflict,
+            description: 'upsert condition',
+          },
+        },
+        description: `insert a single row into the table: ${item.name}`,
+      },
+    ]);
+    mutations.push([
+      `delete_${item.name}`,
+      {
+        type: mutation_response,
+        args: {
+          where: {
+            type: bool_exp,
+            description: 'filter the rows which have to be deleted',
+          },
+        },
+        description: `delete data from the table: ${item.name}`,
+      },
+    ]);
+    mutations.push([
+      `update_${item.name}`,
+      {
+        type: mutation_response,
+        args: updates_fields,
+        description: `update data of the table: ${item.name}`,
+      },
+    ]);
+    mutations.push([
+      `update_${item.name}_many`,
+      {
+        type: new GraphQLList(mutation_response),
+        args: {
+          updates: {
+            type: TypeGen.non_null_non_null_list(updates),
+            description: 'updates to execute, in order',
+          },
+        },
+        description: `update multiples rows of table: ${item.name}`,
+      },
+    ]);
     if (pks.length) {
       queries.push([
         item.name + '_by_pk',
@@ -183,6 +460,38 @@ function generateQuery(
               pks.map((x) => [x.name, { type: x.type as GraphQLInputType }])
             ),
           },
+          description: `fetch data from the table: ${item.name} using primary key columns`,
+        },
+      ]);
+      mutations.push([
+        `delete_${item.name}_by_pk`,
+        {
+          type: item,
+          args: {
+            ...Object.fromEntries(
+              pks.map((x) => [x.name, { type: x.type as GraphQLInputType }])
+            ),
+          },
+          description: `delete single row from the table: ${item.name}`,
+        },
+      ]);
+      mutations.push([
+        `update_${item.name}_by_pk`,
+        {
+          type: item,
+          args: {
+            _set: {
+              type: set_input,
+              description:
+                'sets the columns of the filtered rows to the given values',
+            },
+            pk_columns: {
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+              type: pk_columns_input!,
+              description: 'filter the rows which have to be updated',
+            },
+          },
+          description: `update single row of the table: ${item.name}`,
         },
       ]);
     }
@@ -203,16 +512,19 @@ function generateQuery(
           kind: Kind.FIELD_DEFINITION,
           name: mkname(name),
           arguments: generateInputValueDefinitionsAst({
-            limit: AstType.named('Int'),
-            offset: AstType.named('Int'),
-            where: AstType.named(NameMap.bool_exp(relation.target)),
-            order_by: AstType.named(NameMap.order_by(relation.target)),
-            distinct_on: {
-              kind: Kind.LIST_TYPE,
-              type: AstType.non_null_list(
-                AstType.named(NameMap.select_column(relation.target))
-              ),
-            },
+            limit: AstType.named('Int', 'limit the number of rows returned'),
+            offset: AstType.named(
+              'Int',
+              'skip the first n rows. Use only with order_by'
+            ),
+            where: AstType.named(
+              NameMap.bool_exp(relation.target),
+              'filter the rows returned'
+            ),
+            order_by: AstType.named(
+              NameMap.order_by(relation.target),
+              'sort the rows by one or more columns'
+            ),
           }),
           type: AstType.non_null(
             AstType.non_null_list(AstType.named(relation.target))
@@ -228,38 +540,64 @@ function generateQuery(
   }
 }
 
+const TypeGen = {
+  non_null_non_null_list<T extends GraphQLNullableType>(type: T) {
+    return new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(type)));
+  },
+  non_null_list<T extends GraphQLNullableType>(type: T) {
+    return new GraphQLList(new GraphQLNonNull(type));
+  },
+};
+
+type MaybeDescription = { description?: string };
+
 const AstType = {
-  named(name: string): NamedTypeNode {
+  named(name: string, description?: string): NamedTypeNode & MaybeDescription {
     return {
       kind: Kind.NAMED_TYPE,
       name: mkname(name),
+      description,
     };
   },
-  non_null(type: NamedTypeNode | ListTypeNode): NonNullTypeNode {
+  non_null(
+    type: NamedTypeNode | ListTypeNode,
+    description?: string
+  ): NonNullTypeNode & MaybeDescription {
     return {
       kind: Kind.NON_NULL_TYPE,
       type,
+      description,
     };
   },
-  list(type: TypeNode): ListTypeNode {
+  list(type: TypeNode, description?: string): ListTypeNode & MaybeDescription {
     return {
       kind: Kind.LIST_TYPE,
       type,
+      description,
     };
   },
-  non_null_list(type: NamedTypeNode | ListTypeNode): ListTypeNode {
-    return AstType.list(AstType.non_null(type));
+  non_null_list(
+    type: NamedTypeNode | ListTypeNode,
+    description?: string
+  ): ListTypeNode & MaybeDescription {
+    return AstType.list(AstType.non_null(type), description);
   },
 };
 
 function generateInputValueDefinitionsAst(
-  input: Record<string, TypeNode>
+  input: Record<string, TypeNode & MaybeDescription>
 ): InputValueDefinitionNode[] {
   return Object.entries(input).map(
-    ([k, type]): InputValueDefinitionNode => ({
+    ([k, { description, ...type }]): InputValueDefinitionNode => ({
       kind: Kind.INPUT_VALUE_DEFINITION,
       name: mkname(k),
       type,
+      description: description
+        ? {
+            kind: Kind.STRING,
+            value: description,
+          }
+        : undefined,
     })
   );
 }
