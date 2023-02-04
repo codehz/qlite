@@ -27,7 +27,7 @@ function generateSubQuery(
   const selections = mapper.selections(root.subfields);
   const where: string[] = [];
   for (const { from, to } of relation.defintions) {
-    where.push(fmt`%q.%q = %q.%q`(parent, from, basename, to));
+    where.push(fmt`%q.%q = %q.%q`(parent, from, mapper.alias, to));
   }
   if (relation.type === 'array') {
     const arg = root.arguments as {
@@ -37,29 +37,29 @@ function generateSubQuery(
       order_by?: Record<string, string>;
     };
     if (arg.where) where.push(mapper.where(arg.where));
-    const query = [
-      fmt`SELECT json_group_array(json_object(%s)) FROM %q AS %q`(
-        selections.asJSON(),
-        relation.target,
-        basename
-      ),
-      trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
-      trueMap(arg.order_by, (x) =>
-        trueMap(generateOrderBy(x, basename), (x) =>
-          fmt`ORDER BY %s`(x.join(', '))
-        )
-      ),
-      trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
-      trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
-    ]
-      .filter(Boolean)
-      .join(' ');
-    return fmt`coalesce((%s), %t)`(query, '[]');
+    const ordered = trueMap(arg.order_by, (x) =>
+      trueMap(generateOrderBy(x, mapper.alias), (x) =>
+        fmt`ORDER BY %s`(x.join(', '))
+      )
+    );
+    const queue: string[] = [];
+    queue.push(fmt`SELECT * FROM %q AS %q`(relation.target, mapper.alias));
+    queue.push(ordered);
+    queue.push(trueMap(arg.limit, fmt`LIMIT %s`));
+    queue.push(trueMap(arg.offset, fmt`OFFSET %s`));
+    const inner = queue.splice(0).filter(Boolean).join(' ');
+    queue.push(fmt`WITH %q AS (%s)`(mapper.alias, inner));
+    queue.push(
+      fmt`SELECT json_group_array(json_object(%s))`(selections.asJSON())
+    );
+    queue.push(fmt`FROM %q`(mapper.alias));
+    const sql = queue.filter(Boolean).join(' ');
+    return fmt`coalesce((%s), %t)`(sql, '[]');
   } else if (relation.type === 'object') {
     const query = fmt`SELECT json_object(%s) FROM %q AS %q WHERE %s LIMIT 1`(
       selections.asJSON(),
       relation.target,
-      basename,
+      mapper.alias,
       where.join(' AND ')
     );
     return query;
@@ -238,18 +238,22 @@ export function generateQueryAggregate(
   };
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
-  const sql = [
-    fmt`SELECT %s`(selections.asSelect()),
-    fmt`FROM %s`(mapper.from),
-    trueMap(where, fmt`WHERE %s`),
-    trueMap(arg.order_by, (x) =>
-      trueMap(generateOrderBy(x, mapper.alias), (x) => fmt`ORDER BY %s`(x.join(', ')))
-    ),
-    trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
-    trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const ordered = trueMap(arg.order_by, (x) =>
+    trueMap(generateOrderBy(x, mapper.alias), (x) =>
+      fmt`ORDER BY %s`(x.join(', '))
+    )
+  );
+  const queue: string[] = [];
+  queue.push(fmt`SELECT * FROM %s`(mapper.from));
+  queue.push(trueMap(where, fmt`WHERE %s`));
+  queue.push(ordered);
+  queue.push(trueMap(arg.limit, fmt`LIMIT %s`));
+  queue.push(trueMap(arg.offset, fmt`OFFSET %s`));
+  const inner = queue.splice(0).filter(Boolean).join(' ');
+  queue.push(fmt`WITH %q AS (%s)`(mapper.alias, inner));
+  queue.push(fmt`SELECT %s`(selections.asSelect()));
+  queue.push(fmt`FROM %q`(mapper.alias));
+  const sql = queue.filter(Boolean).join(' ');
   return { sql, parameters: [] };
 }
 
@@ -273,7 +277,9 @@ export function generateQuery(
     fmt`FROM %s`(mapper.from),
     trueMap(where, fmt`WHERE %s`),
     trueMap(arg.order_by, (x) =>
-      trueMap(generateOrderBy(x, mapper.alias), (x) => fmt`ORDER BY %s`(x.join(', ')))
+      trueMap(generateOrderBy(x, mapper.alias), (x) =>
+        fmt`ORDER BY %s`(x.join(', '))
+      )
     ),
     trueMap(arg.limit, fmt`LIMIT %s`),
     trueMap(arg.offset, fmt`OFFSET %s`),
