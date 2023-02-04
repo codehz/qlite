@@ -109,6 +109,10 @@ const serve = command({
       long: 'seed',
       type: optional(string),
     }),
+    debug: flag({
+      type: boolean,
+      long: 'debug',
+    }),
   },
   handler(args) {
     serveHttp(args.input, args);

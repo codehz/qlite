@@ -17,6 +17,7 @@ export interface ServeConfig {
   port: number;
   db?: string;
   seed?: string;
+  debug: boolean;
 }
 
 // workaround
@@ -39,8 +40,8 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
   const resolver = generateResolver(cloneSchema(extended_schema), {
     one(raw, parameters) {
       try {
+        if (config.debug) console.log(raw);
         const stmt = db.prepare(raw);
-        console.log(raw);
         return fixupResult(stmt.get(...parameters));
       } catch (e) {
         if (e instanceof SqliteError) {
@@ -51,8 +52,8 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
     all(raw, parameters) {
       try {
+        if (config.debug) console.log(raw);
         const stmt = db.prepare(raw);
-        console.log(raw);
         return stmt.all(...parameters).map(fixupResult);
       } catch (e) {
         if (e instanceof SqliteError) {
@@ -63,8 +64,8 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
     mutate(raw, parameters, do_returning: boolean) {
       try {
+        if (config.debug) console.log(raw);
         const stmt = db.prepare(raw);
-        console.log(raw);
         return db.transaction(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (): { affected_rows: number; returning: Array<any> } => {
@@ -94,10 +95,10 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
     mutate_batch(tasks, do_returning: boolean) {
       try {
+        if (config.debug) tasks.forEach((x) => x && console.log(x?.sql));
         const stmts = tasks.map((input) =>
           input ? db.prepare(input.sql).bind(...input.parameters) : undefined
         );
-        tasks.forEach((x) => x && console.log(x?.sql));
         return db.transaction(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (): { affected_rows: number; returning: Array<any> }[] => {
