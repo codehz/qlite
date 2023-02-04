@@ -12,6 +12,7 @@ import {
   generateDelete,
   generateDeleteByPk,
   generateUpdate,
+  generateUpdateByPk,
 } from './sql-helper.js';
 
 export type SQLiteTrait = {
@@ -189,6 +190,16 @@ function generateFieldResolver(
           );
         else return { affected_rows: 0, returning: [] };
       },
+      ['update_' + item.name + '_by_pk'](
+        _obj: any,
+        args: any,
+        _ctx: any,
+        info: GraphQLResolveInfo
+      ) {
+        const parsed = parseResolveInfo(args, info);
+        const sql = generateUpdateByPk(schema, parsed, item.name);
+        return smartConvert(trait.one(sql.raw, sql.parameters));
+      },
     });
   }
   const relations = getRelations(item, schema);
@@ -213,6 +224,7 @@ function generateFieldResolver(
 }
 
 function smartConvert(o: any): any {
+  if (o == null) return o;
   if (typeof o.then === 'function') {
     return Promise.resolve(o).then(smartConvert);
   }

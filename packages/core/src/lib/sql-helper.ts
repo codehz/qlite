@@ -199,11 +199,8 @@ export function generateQueryByPk(
   const where: string[] = [];
   const parameters: unknown[] = [];
   for (const [key, value] of Object.entries(root.arguments)) {
-    const resolved = mapper.fields[key];
-    if (!resolved) throw new Error(`Cannot find "${key}" in type "${name}"`);
-    const column = getDirective(schema, resolved, 'column')?.[0];
-    if (!column) throw new Error('invalid primary key');
-    where.push(fmt`%q.%q = ?`(mapper.alias, column['name'] ?? key));
+    const mapped = mapper.namemap[key];
+    where.push(fmt`%q.%q = ?`(mapper.alias, mapped));
     parameters.push(value);
   }
   const raw = fmt`SELECT %s FROM %s WHERE %s`(
@@ -471,6 +468,42 @@ export function generateUpdate(
     raw,
     parameters,
     returning: !selections.empty,
+  };
+}
+
+export function generateUpdateByPk(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): SQLQuery {
+  const mapper = new SQLMapper(schema, name, name);
+  const setters: string[] = [];
+  const parameters: unknown[] = [];
+  const arg = root.arguments as {
+    _set?: Record<string, unknown>;
+    pk_columns: Record<string, unknown>;
+  };
+  if (arg._set)
+    for (const [key, value] of Object.entries(arg._set)) {
+      setters.push(fmt`%q = ?`(mapper.namemap[key]));
+      parameters.push(value);
+    }
+  const where: string[] = [];
+  for (const [key, value] of Object.entries(arg.pk_columns)) {
+    const mapped = mapper.namemap[key];
+    where.push(fmt`%q.%q = ?`(mapper.alias, mapped));
+    parameters.push(value);
+  }
+  const selections = mapper.selections(root.subfields);
+  const queue: string[] = [];
+  queue.push(fmt`UPDATE %q SET`(name));
+  queue.push(setters.join(', '));
+  queue.push(trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))));
+  queue.push(fmt`RETURNING %s`(selections.asSelect()));
+  const raw = queue.filter(Boolean).join(' ');
+  return {
+    raw,
+    parameters,
   };
 }
 
