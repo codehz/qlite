@@ -15,7 +15,12 @@
         "tsConfig": "packages/core/tsconfig.lib.json",
         "assets": [
           "packages/core/*.md",
-          "packages/core/src/**/*.ts"
+          "packages/core/src/**/*.ts",
+          {
+            "glob": "README.md",
+            "input": ".",
+            "output": "."
+          }
         ]
       }
     },
