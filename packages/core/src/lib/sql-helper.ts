@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective } from '@graphql-tools/utils';
 import { GraphQLObjectType, GraphQLSchema } from 'graphql';
-import { fmt, trueMap, SQLSelections, generateOrderBy, generateWhere } from './internals/sql.js';
+import {
+  fmt,
+  trueMap,
+  SQLSelections,
+  generateOrderBy,
+  generateWhere,
+} from './internals/sql.js';
 import { getRelations } from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
 
@@ -54,7 +60,7 @@ function generateSubQuery(
       const relation = findRelation(schema, type, subfield.name);
       if (relation) {
         const subquery = generateSubQuery(schema, subfield, basename, relation);
-        json_fields.add$(subfield.alias, subquery);
+        json_fields.add$(subfield.alias, subquery, true);
       }
     }
   }
@@ -102,6 +108,7 @@ function generateSubQuery(
 }
 
 const QUERY_BY_PK = /^(.+)_by_pk$/;
+const QUERY_AGGREGATE = /^(.+)_aggregate$/;
 
 class SQLMapper {
   tablename: string;
@@ -184,6 +191,41 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
     );
     console.log(raw);
     return { raw, parameters };
+  } else if ((matched = root.name.match(QUERY_AGGREGATE))) {
+    const name = matched[1];
+    const mapper = new SQLMapper(schema, name, root.alias);
+    const selections = new SQLSelections();
+    for (const field of root.subfields) {
+      if (field.name === 'nodes') {
+        const subsel = mapper.selections(field.subfields);
+        selections.add$(
+          field.alias,
+          fmt`json_group_array(json_object(%s))`(subsel.asJSON())
+        );
+      }
+    }
+    const arg = root.arguments as {
+      limit?: number;
+      offset?: number;
+      where?: Record<string, unknown>;
+      order_by?: Record<string, string>;
+    };
+    const where: string[] = [];
+    if (arg.where) where.push(...mapper.where(arg.where));
+    const raw = [
+      fmt`SELECT %s`(selections.asSelect()),
+      fmt`FROM %s`(mapper.from),
+      trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))),
+      trueMap(arg.order_by, (x) =>
+        trueMap(generateOrderBy(x, name), (x) => fmt`ORDER BY %s`(x.join(', ')))
+      ),
+      trueMap(arg.limit, (x) => fmt`LIMIT %s`(x)),
+      trueMap(arg.offset, (x) => fmt`OFFSET %s`(x)),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    console.log(raw);
+    return { raw, parameters: [] };
   } else {
     const name = root.name;
     const mapper = new SQLMapper(schema, name, root.alias);
@@ -195,8 +237,7 @@ export function generateSQL(schema: GraphQLSchema, root: FieldInfo): SQLQuery {
       order_by?: Record<string, string>;
     };
     const where: string[] = [];
-    if (arg.where)
-      where.push(...mapper.where(arg.where));
+    if (arg.where) where.push(...mapper.where(arg.where));
     const raw = [
       fmt`SELECT %s`(selections.asSelect()),
       fmt`FROM %s`(mapper.from),

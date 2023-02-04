@@ -64,11 +64,41 @@ function generateQuery(
         const sql = generateSQL(schema, parsed);
         return trait.one(sql.raw, sql.parameters);
       },
+      [item.name + '_aggregate'](
+        _obj: any,
+        args: any,
+        _ctx: any,
+        info: GraphQLResolveInfo
+      ) {
+        const parsed = parseResolveInfo(args, info);
+        const sql = generateSQL(schema, parsed);
+        const ret = trait.one(sql.raw, sql.parameters);
+        console.log(ret);
+        return ret;
+      },
       [item.name](_obj: any, args: any, _ctx: any, info: GraphQLResolveInfo) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateSQL(schema, parsed);
         return trait.all(sql.raw, sql.parameters);
       },
+    });
+    Object.assign(Root, {
+      [item.name + '_aggregate']: Object.fromEntries(
+        ['nodes', 'aggregate'].map((x) => {
+          const key = item.name + '.' + x;
+          return [
+            x,
+            {
+              [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
+                return resolveJSON(
+                  obj['$' + info.path.key],
+                  !info.path.prev?.prev
+                );
+              },
+            }[key] as ResolverType,
+          ];
+        })
+      ),
     });
   }
   const relations = getRelations(item, schema);

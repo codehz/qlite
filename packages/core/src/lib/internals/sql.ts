@@ -115,20 +115,20 @@ export function generateOrderBy(
 export class SQLSelections {
   #selections = new Map<string, string>();
 
-  add(key: string, value: string) {
-    this.#selections.set(key, value);
+  add(key: string, value: string, wrap = false) {
+    this.#selections.set(key, wrap ? fmt`(%s)`(value) : value);
   }
-  add$(key: string, value: string) {
-    this.#selections.set('$' + key, value);
+  add$(key: string, value: string, wrap = false) {
+    this.#selections.set('$' + key, wrap ? fmt`(%s)`(value) : value);
   }
   asJSON() {
     return [...this.#selections.entries()]
-      .map(([key, value]) => fmt`%t, (%s)`(key, value))
+      .map(([key, value]) => fmt`%t, %s`(key, value))
       .join(', ');
   }
   asSelect() {
     return [...this.#selections.entries()]
-      .map(([key, value]) => fmt`(%s) AS %q`(value, key))
+      .map(([key, value]) => fmt`%s AS %q`(value, key))
       .join(', ');
   }
 }
