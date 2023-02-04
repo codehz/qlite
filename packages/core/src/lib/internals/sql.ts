@@ -22,7 +22,10 @@ export function fmt(
     });
 }
 
-export function trueMap<T>(f: T | null | undefined, cb: (input: T) => string): string {
+export function trueMap<T>(
+  f: T | null | undefined,
+  cb: (input: T) => string
+): string {
   if (f == null) return '';
   if (Array.isArray(f) && f.length === 0) return '';
   return cb(f);
@@ -67,7 +70,10 @@ function generateWhereCond(
   return '';
 }
 
-export function generateWhere(input: Record<string, unknown>, self: string): string[] {
+export function generateWhere(
+  input: Record<string, unknown>,
+  self: string
+): string[] {
   const conds: string[] = [];
   for (const [key, value] of Object.entries(input)) {
     switch (key) {
@@ -107,22 +113,22 @@ export function generateOrderBy(
 }
 
 export class SQLSelections {
-  #selections: { key: string; value: string }[] = [];
+  #selections = new Map<string, string>();
 
   add(key: string, value: string) {
-    this.#selections.push({ key, value });
+    this.#selections.set(key, value);
   }
   add$(key: string, value: string) {
-    this.#selections.push({ key: '$' + key, value });
+    this.#selections.set('$' + key, value);
   }
   asJSON() {
-    return this.#selections
-      .map(({ key, value }) => fmt`%t, (%s)`(key, value))
+    return [...this.#selections.entries()]
+      .map(([key, value]) => fmt`%t, (%s)`(key, value))
       .join(', ');
   }
   asSelect() {
-    return this.#selections
-      .map(({ key, value }) => fmt`(%s) AS %q`(value, key))
+    return [...this.#selections.entries()]
+      .map(([key, value]) => fmt`(%s) AS %q`(value, key))
       .join(', ');
   }
 }
