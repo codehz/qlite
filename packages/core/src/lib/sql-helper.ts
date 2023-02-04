@@ -12,7 +12,7 @@ import { getRelations, Relation } from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
 
 export type SQLQuery = {
-  raw: string;
+  sql: string;
   parameters: unknown[];
 };
 
@@ -203,12 +203,12 @@ export function generateQueryByPk(
     where.push(fmt`%q.%q = ?`(mapper.alias, mapped));
     parameters.push(value);
   }
-  const raw = fmt`SELECT %s FROM %s WHERE %s`(
+  const sql = fmt`SELECT %s FROM %s WHERE %s`(
     selections.asSelect(),
     mapper.from,
     where.join(', ')
   );
-  return { raw, parameters };
+  return { sql, parameters };
 }
 
 export function generateQueryAggregate(
@@ -238,7 +238,7 @@ export function generateQueryAggregate(
   };
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
-  const raw = [
+  const sql = [
     fmt`SELECT %s`(selections.asSelect()),
     fmt`FROM %s`(mapper.from),
     trueMap(where, fmt`WHERE %s`),
@@ -250,7 +250,7 @@ export function generateQueryAggregate(
   ]
     .filter(Boolean)
     .join(' ');
-  return { raw, parameters: [] };
+  return { sql, parameters: [] };
 }
 
 export function generateQuery(
@@ -268,7 +268,7 @@ export function generateQuery(
   };
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
-  const raw = [
+  const sql = [
     fmt`SELECT %s`(selections.asSelect()),
     fmt`FROM %s`(mapper.from),
     trueMap(where, fmt`WHERE %s`),
@@ -280,7 +280,7 @@ export function generateQuery(
   ]
     .filter(Boolean)
     .join(' ');
-  return { raw, parameters: [] };
+  return { sql, parameters: [] };
 }
 
 export function generateInsertOne(
@@ -321,8 +321,8 @@ export function generateInsertOne(
     queue.push('DEFAULT VALUES');
   }
   queue.push(fmt`RETURNING %s`(selections.asSelect()));
-  const raw = queue.filter(Boolean).join(' ');
-  return { raw, parameters };
+  const sql = queue.filter(Boolean).join(' ');
+  return { sql, parameters };
 }
 
 export function generateInsert(
@@ -365,10 +365,10 @@ export function generateInsert(
   if (!selections.empty) {
     queue.push(fmt`RETURNING %s`(selections.asSelect()));
   }
-  const raw = queue.filter(Boolean).join(' ');
+  const sql = queue.filter(Boolean).join(' ');
 
   return {
-    raw,
+    sql,
     parameters: [JSON.stringify(objects)],
     returning: !selections.empty,
   };
@@ -395,8 +395,8 @@ export function generateDeleteByPk(
   queue.push(fmt`DELETE FROM %q`(name));
   queue.push(fmt`WHERE %s`(where.join(', ')));
   queue.push(fmt`RETURNING %s`(selections.asSelect()));
-  const raw = queue.filter(Boolean).join(' ');
-  return { raw, parameters };
+  const sql = queue.filter(Boolean).join(' ');
+  return { sql, parameters };
 }
 
 export function generateDelete(
@@ -422,9 +422,9 @@ export function generateDelete(
   if (!selections.empty) {
     queue.push(fmt`RETURNING %s`(selections.asSelect()));
   }
-  const raw = queue.filter(Boolean).join(' ');
+  const sql = queue.filter(Boolean).join(' ');
   return {
-    raw,
+    sql,
     parameters: [],
     returning: !selections.empty,
   };
@@ -463,9 +463,9 @@ export function generateUpdate(
   if (!selections.empty) {
     queue.push(fmt`RETURNING %s`(selections.asSelect()));
   }
-  const raw = queue.filter(Boolean).join(' ');
+  const sql = queue.filter(Boolean).join(' ');
   return {
-    raw,
+    sql,
     parameters,
     returning: !selections.empty,
   };
@@ -500,10 +500,62 @@ export function generateUpdateByPk(
   queue.push(setters.join(', '));
   queue.push(trueMap(where, (x) => fmt`WHERE %s`(x.join(' AND '))));
   queue.push(fmt`RETURNING %s`(selections.asSelect()));
-  const raw = queue.filter(Boolean).join(' ');
+  const sql = queue.filter(Boolean).join(' ');
   return {
-    raw,
+    sql,
     parameters,
+  };
+}
+
+export function generateUpdateMany(
+  schema: GraphQLSchema,
+  root: FieldInfo,
+  name: string
+): { tasks: (SQLQuery | undefined)[]; returning: boolean } | undefined {
+  const mapper = new SQLMapper(schema, name, name);
+  const arg = root.arguments as {
+    updates: MaybeArray<{
+      _set?: Record<string, unknown>;
+      where?: Record<string, unknown>;
+    }>;
+  };
+  const updates = normalizeInputArray(arg.updates);
+  if (!updates) return undefined;
+  const selections = new SQLSelections();
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      selections.merge(mapper.selections(field.subfields));
+    }
+  }
+  return {
+    tasks: updates.map((arg) => {
+      const setters: string[] = [];
+      const parameters: unknown[] = [];
+      if (arg._set)
+        for (const [key, value] of Object.entries(arg._set)) {
+          setters.push(fmt`%q = ?`(mapper.namemap[key]));
+          parameters.push(value);
+        }
+      if (!setters.length) return void 0;
+      let where: string | undefined;
+      if (arg.where) where = mapper.where(arg.where);
+      const selections = new SQLSelections();
+      for (const field of root.subfields) {
+        if (field.name === 'returning') {
+          selections.merge(mapper.selections(field.subfields));
+        }
+      }
+      const queue: string[] = [];
+      queue.push(fmt`UPDATE %q SET`(name));
+      queue.push(setters.join(', '));
+      queue.push(trueMap(where, fmt`WHERE %s`));
+      if (!selections.empty) {
+        queue.push(fmt`RETURNING %s`(selections.asSelect()));
+      }
+      const sql = queue.filter(Boolean).join(' ');
+      return { sql, parameters };
+    }),
+    returning: !selections.empty,
   };
 }
 

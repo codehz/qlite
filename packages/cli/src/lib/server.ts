@@ -92,6 +92,53 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
         throw e;
       }
     },
+    mutate_batch(tasks, do_returning: boolean) {
+      try {
+        const stmts = tasks.map((input) =>
+          input ? db.prepare(input.sql).bind(...input.parameters) : undefined
+        );
+        tasks.forEach((x) => x && console.log(x?.sql));
+        return db.transaction(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (): { affected_rows: number; returning: Array<any> }[] => {
+            if (do_returning) {
+              return stmts.map((stmt) => {
+                if (stmt == null)
+                  return {
+                    affected_rows: 0,
+                    returning: [],
+                  };
+                const returning = stmt.all().map(fixupResult);
+                const affected_rows = get_changes.get().affected_rows as number;
+                return {
+                  affected_rows,
+                  returning,
+                };
+              });
+            } else {
+              return stmts.map((stmt) => {
+                if (stmt == null)
+                  return {
+                    affected_rows: 0,
+                    returning: [],
+                  };
+                stmt.run();
+                const affected_rows = get_changes.get().affected_rows as number;
+                return {
+                  affected_rows,
+                  returning: [],
+                };
+              });
+            }
+          }
+        )();
+      } catch (e) {
+        if (e instanceof SqliteError) {
+          throw new GraphQLError(e.message);
+        }
+        throw e;
+      }
+    },
   });
   const yoga = createYoga({
     schema: makeExecutableSchema({
