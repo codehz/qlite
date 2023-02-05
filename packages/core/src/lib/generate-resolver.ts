@@ -16,15 +16,17 @@ import {
   generateUpdateMany,
 } from './sql-helper.js';
 
-export type SQLiteTrait = {
-  one(sql: string, parameters: any[]): any;
-  all(sql: string, parameters: any[]): any;
+export type SQLiteTrait<T> = {
+  one(ctx: T, sql: string, parameters: any[]): any;
+  all(ctx: T, sql: string, parameters: any[]): any;
   mutate(
+    ctx: T,
     sql: string,
     parameters: any[],
     returning: boolean
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
   mutate_batch(
+    ctx: T,
     tasks: (
       | {
           sql: string;
@@ -45,17 +47,20 @@ export function fixupResult(o: Record<string, unknown>) {
   return o;
 }
 
-type ResolverType = (
+type ResolverType<T> = (
   obj: any,
   args: Record<string, any>,
-  ctx: any,
+  ctx: T,
   info: GraphQLResolveInfo
 ) => any;
 
-export function generateResolver(schema: GraphQLSchema, trait: SQLiteTrait) {
-  const Query: Record<string, ResolverType> = {};
-  const Mutation: Record<string, ResolverType> = {};
-  const Root: Record<string, Record<string, ResolverType>> = {
+export function generateResolver<T = never>(
+  schema: GraphQLSchema,
+  trait: SQLiteTrait<T>
+) {
+  const Query: Record<string, ResolverType<T>> = {};
+  const Mutation: Record<string, ResolverType<T>> = {};
+  const Root: Record<string, Record<string, ResolverType<T>>> = {
     Query,
     Mutation,
   };
@@ -92,14 +97,14 @@ function populateType(schema: GraphQLSchema, name: string) {
             [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
               return obj['$' + info.path.key];
             },
-          }[key] as ResolverType,
+          }[key] as ResolverType<never>,
         ];
       })
     ),
   };
 }
 
-function generateFieldResolver(
+function generateFieldResolver<T>(
   entity: { exported: boolean },
   item: GraphQLObjectType,
   schema: GraphQLSchema,
@@ -109,10 +114,10 @@ function generateFieldResolver(
     Mutation,
     Root,
   }: {
-    trait: SQLiteTrait;
-    Query: Record<string, ResolverType>;
-    Mutation: Record<string, ResolverType>;
-    Root: Record<string, Record<string, ResolverType>>;
+    trait: SQLiteTrait<T>;
+    Query: Record<string, ResolverType<T>>;
+    Mutation: Record<string, ResolverType<T>>;
+    Root: Record<string, Record<string, ResolverType<T>>>;
   }
 ) {
   if (entity.exported) {
@@ -120,27 +125,27 @@ function generateFieldResolver(
       [item.name + '_by_pk'](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQueryByPk(schema, parsed, item.name);
-        return trait.one(sql.sql, sql.parameters);
+        return trait.one(ctx, sql.sql, sql.parameters);
       },
       [item.name + '_aggregate'](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateQueryAggregate(schema, parsed, item.name);
-        return trait.one(query.sql, query.parameters);
+        return trait.one(ctx, query.sql, query.parameters);
       },
-      [item.name](_obj: any, args: any, _ctx: any, info: GraphQLResolveInfo) {
+      [item.name](_obj: any, args: any, ctx: T, info: GraphQLResolveInfo) {
         const parsed = parseResolveInfo(args, info);
         const sql = generateQuery(schema, parsed, item.name);
-        return trait.all(sql.sql, sql.parameters);
+        return trait.all(ctx, sql.sql, sql.parameters);
       },
     });
     Object.assign(Root, {
@@ -151,78 +156,93 @@ function generateFieldResolver(
       ['insert_' + item.name + '_one'](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateInsertOne(schema, parsed, item.name);
-        return trait.one(query.sql, query.parameters);
+        return trait.one(ctx, query.sql, query.parameters);
       },
       ['insert_' + item.name](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateInsert(schema, parsed, item.name);
         if (query)
-          return trait.mutate(query.sql, query.parameters, query.returning);
+          return trait.mutate(
+            ctx,
+            query.sql,
+            query.parameters,
+            query.returning
+          );
         else return { affected_rows: 0, returning: [] };
       },
       ['delete_' + item.name + '_by_pk'](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateDeleteByPk(schema, parsed, item.name);
-        return trait.one(query.sql, query.parameters);
+        return trait.one(ctx, query.sql, query.parameters);
       },
       ['delete_' + item.name](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateDelete(schema, parsed, item.name);
         if (query)
-          return trait.mutate(query.sql, query.parameters, query.returning);
+          return trait.mutate(
+            ctx,
+            query.sql,
+            query.parameters,
+            query.returning
+          );
         else return { affected_rows: 0, returning: [] };
       },
       ['update_' + item.name](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateUpdate(schema, parsed, item.name);
         if (query)
-          return trait.mutate(query.sql, query.parameters, query.returning);
+          return trait.mutate(
+            ctx,
+            query.sql,
+            query.parameters,
+            query.returning
+          );
         else return { affected_rows: 0, returning: [] };
       },
       ['update_' + item.name + '_by_pk'](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateUpdateByPk(schema, parsed, item.name);
-        return trait.one(query.sql, query.parameters);
+        return trait.one(ctx, query.sql, query.parameters);
       },
       ['update_' + item.name + '_many'](
         _obj: any,
         args: any,
-        _ctx: any,
+        ctx: T,
         info: GraphQLResolveInfo
       ) {
         const parsed = parseResolveInfo(args, info);
         const query = generateUpdateMany(schema, parsed, item.name);
-        if (query) return trait.mutate_batch(query.tasks, query.returning);
+        if (query) return trait.mutate_batch(ctx, query.tasks, query.returning);
         else return [];
       },
     });
@@ -237,10 +257,15 @@ function generateFieldResolver(
           return [
             x,
             {
-              [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
+              [key](
+                obj: any,
+                _args: any,
+                _ctx: never,
+                info: GraphQLResolveInfo
+              ) {
                 return obj['$' + info.path.key];
               },
-            }[key] as ResolverType,
+            }[key] as ResolverType<never>,
           ];
         })
       ),

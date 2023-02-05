@@ -38,7 +38,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
   }
   const [extended_schema, typedefs] = generateRootTypes(schema);
   const resolver = generateResolver(cloneSchema(extended_schema), {
-    one(raw, parameters) {
+    one(_ctx, raw, parameters) {
       try {
         if (config.debug) console.log(raw);
         const stmt = db.prepare(raw);
@@ -50,7 +50,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
         throw e;
       }
     },
-    all(raw, parameters) {
+    all(_ctx, raw, parameters) {
       try {
         if (config.debug) console.log(raw);
         const stmt = db.prepare(raw);
@@ -62,7 +62,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
         throw e;
       }
     },
-    mutate(raw, parameters, do_returning: boolean) {
+    mutate(_ctx, raw, parameters, do_returning: boolean) {
       try {
         if (config.debug) console.log(raw);
         const stmt = db.prepare(raw);
@@ -93,7 +93,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
         throw e;
       }
     },
-    mutate_batch(tasks, do_returning: boolean) {
+    mutate_batch(_ctx, tasks, do_returning: boolean) {
       try {
         if (config.debug) tasks.forEach((x) => x && console.log(x?.sql));
         const stmts = tasks.map((input) =>
