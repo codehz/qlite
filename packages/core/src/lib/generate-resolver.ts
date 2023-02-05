@@ -83,6 +83,8 @@ export function generateResolver<T = never>(
   return Root;
 }
 
+// function populate
+
 function populateType(schema: GraphQLSchema, name: string) {
   const type = schema.getType(name);
   if (!type || !(type instanceof GraphQLObjectType))

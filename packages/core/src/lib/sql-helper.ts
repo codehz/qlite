@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective } from '@graphql-tools/utils';
-import { GraphQLObjectType, GraphQLSchema } from 'graphql';
+import { GraphQLNamedType, GraphQLObjectType, GraphQLSchema } from 'graphql';
 import {
   fmt,
   trueMap,
@@ -83,14 +83,20 @@ class SQLMapperInfo implements SQLMapperBase {
   tablename: string;
   namemap: Record<string, string> = {};
   relations: Record<string, Relation> = {};
-  constructor(public schema: GraphQLSchema, public name: string) {
-    const type = schema.getType(name);
+  name: string;
+  constructor(
+    public schema: GraphQLSchema,
+    _type: string | GraphQLNamedType,
+    _entity?: Record<string, any>
+  ) {
+    const type = typeof _type === 'string' ? schema.getType(_type) : _type;
     if (!type || !(type instanceof GraphQLObjectType))
-      throw new Error('invalid type ' + name);
+      throw new Error('invalid type ' + _type);
+    this.name = typeof _type === 'string' ? _type : type?.name;
     this.type = type;
-    const entity = getDirective(schema, type, 'entity')?.[0];
-    if (!entity) throw new Error('invalid entity ' + name);
-    this.tablename = entity['name'] ?? name;
+    const entity = _entity ?? getDirective(schema, type, 'entity')?.[0];
+    if (!entity) throw new Error('invalid entity ' + this.name);
+    this.tablename = entity['name'] ?? this.name;
     const fields = this.type.getFields();
     for (const [key, value] of Object.entries(fields)) {
       const column = getDirective(this.schema, value, 'column')?.[0];
@@ -110,6 +116,19 @@ class SQLMapperInfo implements SQLMapperBase {
     let storage = SQLMapperInfo.cache.get(schema);
     if (!storage) SQLMapperInfo.cache.set(schema, (storage = {}));
     return storage[name] ?? (storage[name] = new SQLMapperInfo(schema, name));
+  }
+}
+
+export function cacheAllSQLMapperInfo(schema: GraphQLSchema) {
+  let storage = SQLMapperInfo.cache.get(schema);
+  if (!storage) SQLMapperInfo.cache.set(schema, (storage = {}));
+  for (const type of Object.values(schema.getTypeMap())) {
+    if (type instanceof GraphQLObjectType) {
+      const entity = getDirective(schema, type, 'entity')?.[0];
+      if (entity) {
+        storage[type.name] = new SQLMapperInfo(schema, type, entity);
+      }
+    }
   }
 }
 

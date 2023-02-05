@@ -1,28 +1,23 @@
 import {
+  cacheAllSQLMapperInfo,
   fixupResult,
   generateResolver,
   generateRootTypes,
   generateSqlInitialMigration,
 } from '@qlite/core';
-import { buildSchema, GraphQLError, GraphQLSchema } from 'graphql';
+import { GraphQLError, GraphQLSchema } from 'graphql';
 import { renderGraphiQL } from '@graphql-yoga/render-graphiql';
 import { createServer } from 'node:http';
 import { createYoga } from 'graphql-yoga';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import Database, { SqliteError } from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
-import { printSchemaWithDirectives } from '@graphql-tools/utils';
 
 export interface ServeConfig {
   port: number;
   db?: string;
   seed?: string;
   debug: boolean;
-}
-
-// workaround
-function cloneSchema(schema: GraphQLSchema) {
-  return buildSchema(printSchemaWithDirectives(schema));
 }
 
 export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
@@ -37,7 +32,8 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     }
   }
   const [extended_schema, typedefs] = generateRootTypes(schema);
-  const resolver = generateResolver(cloneSchema(extended_schema), {
+  cacheAllSQLMapperInfo(extended_schema);
+  const resolver = generateResolver(extended_schema, {
     one(_ctx, raw, parameters) {
       try {
         if (config.debug) console.log(raw);
