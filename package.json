@@ -4,6 +4,7 @@
   "license": "MIT",
   "scripts": {
     "build": "nx run-many --targets=build",
+    "sync-version": "node tools/scripts/sync-version.mjs",
     "publish-project": "node tools/scripts/publish.mjs"
   },
   "private": true,
