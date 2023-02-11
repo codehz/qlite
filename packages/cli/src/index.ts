@@ -19,7 +19,7 @@ import {
 import { inferSchemaFromDatabase } from './lib/infer.js';
 import {
   filterOutBuiltinDefinitions,
-  generateRootTypes,
+  generateRootTypeDefs,
   generateSqlInitialMigration,
 } from '@qlite/core';
 import { mergeSchemas } from '@graphql-tools/schema';
@@ -75,9 +75,9 @@ const generate = command({
     }),
   },
   handler(args) {
-    const [extended_schema, typedefs] = generateRootTypes(args.input);
+    const typedefs = generateRootTypeDefs(args.input);
     const schema = mergeSchemas({
-      schemas: [extended_schema],
+      schemas: [args.input],
       typeDefs: [typedefs],
     });
     if (args.stripDirectives) {

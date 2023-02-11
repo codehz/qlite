@@ -43,7 +43,7 @@ function generateSubQuery(
       )
     );
     const queue: string[] = [];
-    queue.push(fmt`SELECT * FROM %q AS %q`(relation.target, mapper.alias));
+    queue.push(fmt`SELECT * FROM %q AS %q`(mapper.tablename, mapper.alias));
     queue.push(ordered);
     queue.push(trueMap(arg.limit, fmt`LIMIT %s`));
     queue.push(trueMap(arg.offset, fmt`OFFSET %s`));
@@ -58,7 +58,7 @@ function generateSubQuery(
   } else if (relation.type === 'object') {
     const query = fmt`SELECT json_object(%s) FROM %q AS %q WHERE %s LIMIT 1`(
       selections.asJSON(),
-      relation.target,
+      mapper.tablename,
       mapper.alias,
       where.join(' AND ')
     );
@@ -201,8 +201,23 @@ class SQLMapper implements SQLMapperBase {
     return selections;
   }
 
-  where(arg: Record<string, unknown>) {
-    return generateWhere(arg, this.alias, this.namemap)
+  where(arg: Record<string, unknown>): string {
+    return generateWhere(arg, this.alias, this.namemap, (key, value) => {
+      const relation = this.relations[key];
+      const basename = fmt`%s.%s`(this.alias, key);
+      const submapper = new SQLMapper(this.schema, relation.target, basename);
+      const raw = submapper.where(value);
+      const where: string[] = [];
+      for (const { from, to } of relation.defintions) {
+        where.push(fmt`%q.%q = %q.%q`(this.alias, from, submapper.alias, to));
+      }
+      where.push(raw);
+      return fmt`EXISTS (SELECT 1 FROM %q AS %q WHERE %s)`(
+        submapper.tablename,
+        submapper.alias,
+        where.join(' AND ')
+      );
+    })
       .filter(Boolean)
       .join(' AND ');
   }

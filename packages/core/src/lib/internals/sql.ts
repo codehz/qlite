@@ -5,7 +5,7 @@ export function quoteStr(str: string, quote = '"') {
 }
 export function smartQuote(input: unknown): string {
   if (Array.isArray(input)) return '(' + input.map(smartQuote) + ')';
-  if (typeof input === 'string') return quoteStr(input);
+  if (typeof input === 'string') return quoteStr(input, "'");
   return input + '';
 }
 export function fmt(
@@ -73,20 +73,31 @@ function generateWhereCond(
 export function generateWhere(
   input: Record<string, unknown>,
   self: string,
-  namemap: Record<string, string>
+  namemap: Record<string, string>,
+  handle: (key: string, input: Record<string, unknown>) => string
 ): string[] {
   const conds: string[] = [];
   for (const [key, value] of Object.entries(input)) {
     switch (key) {
       case '_and':
         conds.push(
-          ...generateWhere(value as Record<string, unknown>, self, namemap)
+          ...generateWhere(
+            value as Record<string, unknown>,
+            self,
+            namemap,
+            handle
+          )
         );
         break;
       case '_or':
         conds.push(
           trueMap(
-            generateWhere(value as Record<string, unknown>, self, namemap),
+            generateWhere(
+              value as Record<string, unknown>,
+              self,
+              namemap,
+              handle
+            ),
             (x) => fmt`(%s)`(x.join(' OR '))
           )
         );
@@ -94,19 +105,30 @@ export function generateWhere(
       case '_not':
         conds.push(
           trueMap(
-            generateWhere(value as Record<string, unknown>, self, namemap),
+            generateWhere(
+              value as Record<string, unknown>,
+              self,
+              namemap,
+              handle
+            ),
             (x) => fmt`NOT (%s)`(x.join(' AND '))
           )
         );
         break;
-      default:
-        conds.push(
-          generateWhereCond(
-            namemap[key],
-            value as Record<string, unknown>,
-            self
-          )
-        );
+      default: {
+        const matched = namemap[key];
+        if (matched) {
+          conds.push(
+            generateWhereCond(
+              namemap[key],
+              value as Record<string, unknown>,
+              self
+            )
+          );
+        } else {
+          conds.push(handle(key, value as any));
+        }
+      }
     }
   }
   return conds.filter(Boolean);

@@ -1,15 +1,14 @@
 import {
-  cacheAllSQLMapperInfo,
   fixupResult,
   generateResolver,
-  generateRootTypes,
+  generateRootTypeDefs,
   generateSqlInitialMigration,
 } from '@qlite/core';
 import { GraphQLError, GraphQLSchema } from 'graphql';
 import { renderGraphiQL } from '@graphql-yoga/render-graphiql';
 import { createServer } from 'node:http';
 import { createYoga } from 'graphql-yoga';
-import { makeExecutableSchema } from '@graphql-tools/schema';
+import { makeExecutableSchema, mergeSchemas } from '@graphql-tools/schema';
 import Database, { SqliteError } from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 
@@ -31,9 +30,12 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
       db.exec(seed);
     }
   }
-  const [extended_schema, typedefs] = generateRootTypes(schema);
-  cacheAllSQLMapperInfo(extended_schema);
-  const resolver = generateResolver(extended_schema, {
+  const typedefs = generateRootTypeDefs(schema);
+  const merged = mergeSchemas({
+    schemas: [schema],
+    typeDefs: [typedefs],
+  });
+  const resolver = generateResolver(merged, {
     one(_ctx, raw, parameters) {
       try {
         if (config.debug) console.log(raw);
@@ -139,7 +141,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
   });
   const yoga = createYoga({
     schema: makeExecutableSchema({
-      typeDefs: [extended_schema, typedefs],
+      typeDefs: [merged],
       resolvers: resolver,
     }),
     renderGraphiQL,
