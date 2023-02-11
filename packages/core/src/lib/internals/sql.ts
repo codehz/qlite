@@ -27,6 +27,7 @@ export function trueMap<T>(
   cb: (input: T) => string
 ): string {
   if (f == null) return '';
+  if (typeof f === 'string' && f === '') return '';
   if (Array.isArray(f) && f.length === 0) return '';
   return cb(f);
 }
@@ -132,15 +133,6 @@ export function generateWhere(
     }
   }
   return conds.filter(Boolean);
-}
-
-export function generateOrderBy(
-  input: Record<string, string>,
-  self: string
-): string[] {
-  return Object.entries(input).map(([k, v]) =>
-    fmt`%q.%q %s`(self, k, v.replaceAll('_', ' ').toUpperCase())
-  );
 }
 
 export class SQLSelections {

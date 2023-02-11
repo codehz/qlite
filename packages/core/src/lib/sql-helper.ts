@@ -1,13 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective } from '@graphql-tools/utils';
 import { GraphQLNamedType, GraphQLObjectType, GraphQLSchema } from 'graphql';
-import {
-  fmt,
-  trueMap,
-  SQLSelections,
-  generateOrderBy,
-  generateWhere,
-} from './internals/sql.js';
+import { fmt, trueMap, SQLSelections, generateWhere } from './internals/sql.js';
 import { getRelations, Relation } from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
 
@@ -38,9 +32,7 @@ function generateSubQuery(
     };
     if (arg.where) where.push(mapper.where(arg.where));
     const ordered = trueMap(arg.order_by, (x) =>
-      trueMap(generateOrderBy(x, mapper.alias), (x) =>
-        fmt`ORDER BY %s`(x.join(', '))
-      )
+      trueMap(mapper.order_by(x), (x) => fmt`ORDER BY %s`(x))
     );
     const queue: string[] = [];
     queue.push(fmt`SELECT * FROM %q AS %q`(mapper.tablename, mapper.alias));
@@ -215,11 +207,94 @@ class SQLMapper implements SQLMapperBase {
       return fmt`EXISTS (SELECT 1 FROM %q AS %q WHERE %s)`(
         submapper.tablename,
         submapper.alias,
-        where.join(' AND ')
+        where.filter(Boolean).join(' AND ')
       );
     })
       .filter(Boolean)
       .join(' AND ');
+  }
+  #sub_order_by(
+    where: string,
+    mapper: SQLMapper,
+    arg: Record<string, unknown>
+  ): (readonly [string, string])[] {
+    const queue = [] as (readonly [string, string])[];
+    for (const [key, value] of Object.entries(arg)) {
+      if (typeof value === 'string') {
+        const found = mapper.namemap[key];
+        if (found) {
+          const subquery = fmt`SELECT %q.%q FROM %q AS %q WHERE %s`(
+            mapper.alias,
+            found,
+            mapper.tablename,
+            mapper.alias,
+            where
+          );
+          queue.push([
+            fmt`(%s)`(subquery),
+            value.replace('_', ' ').toUpperCase(),
+          ]);
+        }
+      } else {
+        const relation = mapper.relations[key];
+        const basename = fmt`%s.%s`(mapper.alias, key);
+        const submapper = new SQLMapper(this.schema, relation.target, basename);
+        const subwhere: string[] = [];
+        for (const { from, to } of relation.defintions) {
+          subwhere.push(
+            fmt`%q.%q = %q.%q`(mapper.alias, from, submapper.alias, to)
+          );
+        }
+        const subquery_gen = (value: string) =>
+          fmt`(SELECT %s FROM %q AS %q WHERE %s)`(
+            value,
+            mapper.tablename,
+            mapper.alias,
+            where
+          );
+        queue.push(
+          ...this.#sub_order_by(
+            subwhere.join(' AND '),
+            submapper,
+            value as Record<string, unknown>
+          ).map(([k, v]) => [subquery_gen(k), v] as const)
+        );
+      }
+    }
+    return queue;
+  }
+  order_by(arg: Record<string, unknown>): string {
+    const queue = [] as string[];
+    for (const [key, value] of Object.entries(arg)) {
+      if (typeof value === 'string') {
+        const found = this.namemap[key];
+        if (found) {
+          queue.push(
+            fmt`%q.%q %s`(
+              this.alias,
+              found,
+              value.replace('_', ' ').toUpperCase()
+            )
+          );
+        }
+      } else {
+        const relation = this.relations[key];
+        const basename = fmt`%s.%s`(this.alias, key);
+        const submapper = new SQLMapper(this.schema, relation.target, basename);
+        const where: string[] = [];
+        for (const { from, to } of relation.defintions) {
+          where.push(fmt`%q.%q = %q.%q`(this.alias, from, submapper.alias, to));
+        }
+        queue.push(
+          ...this.#sub_order_by(
+            where.join(' AND '),
+            submapper,
+            value as Record<string, unknown>
+          ).map((x) => x.join(' '))
+        );
+      }
+    }
+    return queue.join(', ');
   }
 }
 
@@ -273,9 +348,7 @@ export function generateQueryAggregate(
   let where: string | undefined;
   if (arg.where) where = mapper.where(arg.where);
   const ordered = trueMap(arg.order_by, (x) =>
-    trueMap(generateOrderBy(x, mapper.alias), (x) =>
-      fmt`ORDER BY %s`(x.join(', '))
-    )
+    trueMap(mapper.order_by(x), (x) => fmt`ORDER BY %s`(x))
   );
   const queue: string[] = [];
   queue.push(fmt`SELECT * FROM %s`(mapper.from));
@@ -311,9 +384,7 @@ export function generateQuery(
     fmt`FROM %s`(mapper.from),
     trueMap(where, fmt`WHERE %s`),
     trueMap(arg.order_by, (x) =>
-      trueMap(generateOrderBy(x, mapper.alias), (x) =>
-        fmt`ORDER BY %s`(x.join(', '))
-      )
+      trueMap(mapper.order_by(x), (x) => fmt`ORDER BY %s`(x))
     ),
     trueMap(arg.limit, fmt`LIMIT %s`),
     trueMap(arg.offset, fmt`OFFSET %s`),
