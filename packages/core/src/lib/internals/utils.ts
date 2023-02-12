@@ -2,8 +2,10 @@ import { getDirective } from '@graphql-tools/utils';
 import { GraphQLObjectType, GraphQLSchema } from 'graphql';
 
 export function getColumns(item: GraphQLObjectType, schema: GraphQLSchema) {
-  return Object.entries(item.getFields()).map(([k, v]) => {
-    const { name, ...dir } = getDirective(schema, v, 'column')?.[0] as {
+  return Object.entries(item.getFields()).flatMap(([k, v]) => {
+    const raw = getDirective(schema, v, 'column')?.[0];
+    if (!raw) return [];
+    const { name, ...dir } = raw as {
       name?: string;
       primary_key?: boolean;
       alias_rowid?: boolean;
