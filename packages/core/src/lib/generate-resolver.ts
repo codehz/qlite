@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective, MaybePromise } from '@graphql-tools/utils';
 import { GraphQLObjectType, GraphQLResolveInfo, GraphQLSchema } from 'graphql';
-import { getRelations } from './internals/utils.js';
+import { getComputedColumns, getRelations } from './internals/utils.js';
 import { parseResolveInfo } from './selection-utils.js';
 import {
   generateQueryByPk,
@@ -42,6 +42,9 @@ export function fixupResult(o: Record<string, unknown>) {
   for (const key in o) {
     if (key.startsWith('$')) {
       o[key] = JSON.parse(o[key] as string);
+    } else if (key.startsWith('raw$')) {
+      o[key.slice(3)] = o[key];
+      delete o[key];
     }
   }
   return o;
@@ -83,7 +86,27 @@ export function generateResolver<T = never>(
   return Root;
 }
 
-// function populate
+function populateComputedColumns(schema: GraphQLSchema, name: string) {
+  const type = schema.getType(name);
+  if (!type || !(type instanceof GraphQLObjectType))
+    throw new Error('invalid type ' + name);
+  const columns = getComputedColumns(type, schema);
+  if (columns)
+    return Object.fromEntries(
+      columns.map((x) => {
+        const key = name + '.' + x.name;
+        return [
+          x.name,
+          {
+            [key](obj: any, _args: any, _ctx: any, info: GraphQLResolveInfo) {
+              return obj['$' + info.path.key];
+            },
+          }[key] as ResolverType<never>,
+        ];
+      })
+    );
+  return undefined;
+}
 
 function populateType(schema: GraphQLSchema, name: string) {
   const type = schema.getType(name);
@@ -122,6 +145,7 @@ function generateFieldResolver<T>(
     Root: Record<string, Record<string, ResolverType<T>>>;
   }
 ) {
+  const Self = (Root[item.name] = {});
   if (entity.exported) {
     Object.assign(Query, {
       [item.name + '_by_pk'](
@@ -150,6 +174,7 @@ function generateFieldResolver<T>(
         return trait.all(ctx, sql.sql, sql.parameters);
       },
     });
+    Object.assign(Self, populateComputedColumns(schema, item.name));
     Object.assign(Root, {
       ...populateType(schema, item.name + '_aggregate'),
       ...populateType(schema, item.name + '_aggregate_fields'),
@@ -252,8 +277,9 @@ function generateFieldResolver<T>(
   const relations = getRelations(item, schema);
   if (relations) {
     const names = relations.map((x) => x.name ?? x.target);
-    Object.assign(Root, {
-      [item.name]: Object.fromEntries(
+    Object.assign(
+      Self,
+      Object.fromEntries(
         names.map((x) => {
           const key = item.name + '.' + x;
           return [
@@ -270,7 +296,7 @@ function generateFieldResolver<T>(
             }[key] as ResolverType<never>,
           ];
         })
-      ),
-    });
+      )
+    );
   }
 }

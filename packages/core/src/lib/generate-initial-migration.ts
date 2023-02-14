@@ -43,13 +43,13 @@ export function generateSqlInitialMigration(schema: GraphQLSchema) {
           tableOptions.push('WITHOUT ROWID');
         }
         for (const field of Object.values(item.getFields())) {
-          const column =
-            (getDirective(schema, field, 'column')?.[0] as {
-              name?: string;
-              primary_key?: boolean;
-              alias_rowid?: boolean;
-              default?: string;
-            }) ?? {};
+          const column = getDirective(schema, field, 'column')?.[0] as {
+            name?: string;
+            primary_key?: boolean;
+            alias_rowid?: boolean;
+            default?: string;
+          };
+          if (!column) continue;
           const column_name: string = column.name ?? field.name;
           let base_def = `${column_name} ${resolveSqlType(field.type)}`;
           if (column.primary_key) {

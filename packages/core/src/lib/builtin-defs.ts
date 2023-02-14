@@ -7,7 +7,7 @@ const DIRECTIVES = [
   'column',
   'check',
   'relation',
-  'sql',
+  'computed',
 ];
 
 const ENUMS = ['QLiteRelationType', 'QLiteForeignKeyBehavior'];
@@ -59,7 +59,7 @@ directive @relation(
   target: String!,
   defintions: [QLiteRelationDefinition!]!
 ) repeatable on OBJECT
-directive @sql(raw: String!, self: String) on FIELD_DEFINITION
+directive @computed(sql: String!) on FIELD_DEFINITION
 
 enum QLiteRelationType {
   object

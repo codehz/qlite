@@ -136,13 +136,25 @@ export function generateWhere(
 }
 
 export class SQLSelections {
-  #selections = new Map<string, string>();
+  #selections = new Map<string, { value: string; raw: boolean }>();
 
   add(key: string, value: string, wrap = false) {
-    this.#selections.set(key, wrap ? fmt`(%s)`(value) : value);
+    this.#selections.set(key, {
+      value: wrap ? fmt`(%s)`(value) : value,
+      raw: false,
+    });
   }
   add$(key: string, value: string, wrap = false) {
-    this.#selections.set('$' + key, wrap ? fmt`(%s)`(value) : value);
+    this.#selections.set('$' + key, {
+      value: wrap ? fmt`(%s)`(value) : value,
+      raw: false,
+    });
+  }
+  add$raw(key: string, value: string, wrap = false) {
+    this.#selections.set('$' + key, {
+      value: wrap ? fmt`(%s)`(value) : value,
+      raw: true,
+    });
   }
   merge(rhs: SQLSelections) {
     for (const [key, value] of rhs.#selections) {
@@ -154,12 +166,14 @@ export class SQLSelections {
   }
   asJSON() {
     return [...this.#selections.entries()]
-      .map(([key, value]) => fmt`%t, %s`(key, value))
+      .map(([key, { value }]) => fmt`%t, %s`(key, value))
       .join(', ');
   }
   asSelect() {
     return [...this.#selections.entries()]
-      .map(([key, value]) => fmt`%s AS %q`(value, key))
+      .map(([key, { value, raw }]) =>
+        fmt`%s AS %q`(value, raw ? `raw${key}` : key)
+      )
       .join(', ');
   }
 }

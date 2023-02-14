@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDirective } from '@graphql-tools/utils';
 import { GraphQLNamedType, GraphQLObjectType, GraphQLSchema } from 'graphql';
+import { CacheManager } from './internals/cache.js';
 import { fmt, trueMap, SQLSelections, generateWhere } from './internals/sql.js';
-import { getRelations, Relation } from './internals/utils.js';
+import {
+  ComputedSQLBuilder,
+  getComputedColumns,
+  getRelations,
+  Relation,
+} from './internals/utils.js';
 import { FieldInfo } from './selection-utils.js';
 
 export type SQLQuery = {
@@ -66,6 +72,7 @@ interface SQLMapperBase {
   readonly tablename: string;
   readonly namemap: Record<string, string>;
   readonly relations: Record<string, Relation>;
+  readonly computeds: Record<string, ComputedSQLBuilder>;
   readonly schema: GraphQLSchema;
   readonly name: string;
 }
@@ -75,6 +82,7 @@ class SQLMapperInfo implements SQLMapperBase {
   tablename: string;
   namemap: Record<string, string> = {};
   relations: Record<string, Relation> = {};
+  computeds: Record<string, ComputedSQLBuilder> = {};
   name: string;
   constructor(
     public schema: GraphQLSchema,
@@ -102,25 +110,19 @@ class SQLMapperInfo implements SQLMapperBase {
         this.relations[rel.name ?? rel.target] = rel;
       }
     }
-  }
-  static cache = new WeakMap<GraphQLSchema, Record<string, SQLMapperBase>>();
-  static getCached(schema: GraphQLSchema, name: string) {
-    let storage = SQLMapperInfo.cache.get(schema);
-    if (!storage) SQLMapperInfo.cache.set(schema, (storage = {}));
-    return storage[name] ?? (storage[name] = new SQLMapperInfo(schema, name));
-  }
-}
-
-export function cacheAllSQLMapperInfo(schema: GraphQLSchema) {
-  let storage = SQLMapperInfo.cache.get(schema);
-  if (!storage) SQLMapperInfo.cache.set(schema, (storage = {}));
-  for (const type of Object.values(schema.getTypeMap())) {
-    if (type instanceof GraphQLObjectType) {
-      const entity = getDirective(schema, type, 'entity')?.[0];
-      if (entity) {
-        storage[type.name] = new SQLMapperInfo(schema, type, entity);
+    const computed = getComputedColumns(type, schema);
+    if (computed) {
+      for (const { name, builder } of computed) {
+        this.computeds[name] = builder;
       }
     }
+  }
+  static cache = new CacheManager<SQLMapperInfo>();
+  static getCached(schema: GraphQLSchema, name: string) {
+    return (this.cache.cache(schema, name).value ??= new SQLMapperInfo(
+      schema,
+      name
+    ));
   }
 }
 
@@ -129,6 +131,7 @@ class SQLMapper implements SQLMapperBase {
   readonly type!: GraphQLObjectType;
   readonly namemap!: Record<string, string>;
   readonly relations!: Record<string, Relation>;
+  readonly computeds!: Record<string, ComputedSQLBuilder>;
   constructor(
     public readonly schema: GraphQLSchema,
     public readonly name: string,
@@ -159,6 +162,10 @@ class SQLMapper implements SQLMapperBase {
           resolved
         );
         selections.add$(subfield.alias, subquery, true);
+      } else if ((resolved = this.computeds[subfield.name])) {
+        const result = resolved(this.alias, subfield.arguments);
+        // selections.add(subfield.name, result, true);
+        selections.add$raw(subfield.alias, result, true);
       }
     }
     return selections;
