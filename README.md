@@ -109,8 +109,7 @@ Supported features list:
 
 Incomplete/Unsupported features list: 
 1. Not all comparison operators and aggregate functions are supported, but some of them will be supported in future releases
-2. (TODO) Computed fields are not supported.
-3. [distinct_on](https://hasura.io/docs/latest/queries/postgres/distinct-queries/#the-distinct_on-argument) are not supported.
-4. on_conflict type has different syntax
-5. (TODO) JSON related feature
-6. (TODO) [Insert an object along with its related objects through relationships](https://hasura.io/docs/latest/mutations/postgres/insert/#pg-nested-inserts)
+2. [distinct_on](https://hasura.io/docs/latest/queries/postgres/distinct-queries/#the-distinct_on-argument) are not supported.
+3. on_conflict type has different syntax
+4. (TODO) JSON related feature
+5. (TODO) [Insert an object along with its related objects through relationships](https://hasura.io/docs/latest/mutations/postgres/insert/#pg-nested-inserts)
