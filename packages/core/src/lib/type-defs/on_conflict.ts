@@ -9,7 +9,7 @@ export function generateOnConflict(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ) {
-  return ctx.types.add(SuffixMap.on_conflict(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.on_conflict(item.name))((name) => ({
     kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
     name,
     description: mkstr(`on_conflict condition type for table ${item.name}`),

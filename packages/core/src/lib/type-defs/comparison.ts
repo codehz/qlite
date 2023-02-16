@@ -1,5 +1,11 @@
-import { GraphQLOutputType, TypeNode, GraphQLNonNull, GraphQLScalarType, Kind } from "graphql";
-import { Context, SuffixMap, mkfields, $ } from "./utils.js";
+import {
+  GraphQLOutputType,
+  TypeNode,
+  GraphQLNonNull,
+  GraphQLScalarType,
+  Kind,
+} from 'graphql';
+import { Context, SuffixMap, mkfields, $ } from './utils.js';
 
 export function generateComparisonType(
   type: GraphQLOutputType,
@@ -10,7 +16,7 @@ export function generateComparisonType(
     return generateComparisonType(inner, ctx);
   }
   if (type instanceof GraphQLScalarType) {
-    return ctx.types.add(SuffixMap.comparison_exp(type.name), (name) => ({
+    return ctx.types.add(SuffixMap.comparison_exp(type.name))((name) => ({
       kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
       name,
       fields: mkfields({

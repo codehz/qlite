@@ -422,8 +422,13 @@ export function generateInsertOne(
   const column_template: string[] = [];
   const parameters: unknown[] = [];
   for (const [key, value] of Object.entries(args.object)) {
-    column_template.push(mapper.namemap[key]);
-    parameters.push(value);
+    let resolved;
+    if ((resolved = mapper.namemap[key])) {
+      column_template.push(resolved);
+      parameters.push(value);
+    } else if ((resolved = mapper.relations[key])) {
+      throw new Error('not implemented');
+    }
   }
   const queue: string[] = [];
   queue.push(fmt`INSERT INTO %q`(name));

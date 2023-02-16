@@ -7,7 +7,7 @@ export function generateAggregate(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ) {
-  return ctx.types.add(SuffixMap.aggregate(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.aggregate(item.name))((name) => ({
     kind: Kind.OBJECT_TYPE_DEFINITION,
     name,
     description: mkstr(`aggregated selection of ${item.name}`),

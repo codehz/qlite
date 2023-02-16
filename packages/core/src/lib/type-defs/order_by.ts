@@ -12,7 +12,7 @@ import {
 } from './utils.js';
 
 function genENUM(ctx: Context) {
-  return ctx.types.add('order_by', (name) => ({
+  return ctx.types.add('order_by')((name) => ({
     kind: Kind.ENUM_TYPE_DEFINITION,
     name,
     values: mkfields({
@@ -48,7 +48,7 @@ export function generateOrderBy(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ): NamedTypeNode {
-  return ctx.types.add(SuffixMap.order_by(item.name), (name) => {
+  return ctx.types.add(SuffixMap.order_by(item.name))((name) => {
     const columns = getColumns(item, ctx.schema);
     const relations = getRelations(item, ctx.schema);
     return {

@@ -25,7 +25,7 @@ export function generateMutation(
   ctx: Context
 ) {
   const mutation_response = generateMutationResponse(item, ctx);
-  ctx.mutations.add(`insert_${item.name}`, (name) => ({
+  ctx.mutations.add(`insert_${item.name}`)((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: mutation_response,
@@ -43,7 +43,7 @@ export function generateMutation(
     }),
     description: mkstr(`insert data into the table: ${item.name}`),
   }));
-  ctx.mutations.add(`insert_${item.name}_one`, (name) => ({
+  ctx.mutations.add(`insert_${item.name}_one`)((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: $.named(item.name),
@@ -61,7 +61,7 @@ export function generateMutation(
     }),
     description: mkstr(`insert a single row into the table: ${item.name}`),
   }));
-  ctx.mutations.add(`delete_${item.name}`, (name) => ({
+  ctx.mutations.add(`delete_${item.name}`)((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: mutation_response,
@@ -74,14 +74,14 @@ export function generateMutation(
     }),
     description: mkstr(`delete data from the table: ${item.name}`),
   }));
-  ctx.mutations.add(`update_${item.name}`, (name) => ({
+  ctx.mutations.add(`update_${item.name}`)((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: mutation_response,
     arguments: mkfields(_generateUpdatesFields(item, ctx)),
     description: mkstr(`update data of the table: ${item.name}`),
   }));
-  ctx.mutations.add(`update_${item.name}_many`, (name) => ({
+  ctx.mutations.add(`update_${item.name}_many`)((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: $.list(mutation_response),
@@ -96,7 +96,7 @@ export function generateMutation(
   const columns = getColumns(item, ctx.schema);
   const pks = columns.filter((x) => x.primary_key);
   if (pks.length) {
-    ctx.mutations.add(`delete_${item.name}_by_pk`, (name) => ({
+    ctx.mutations.add(`delete_${item.name}_by_pk`)((name) => ({
       kind: Kind.FIELD_DEFINITION,
       name,
       type: $.named(item.name),
@@ -107,7 +107,7 @@ export function generateMutation(
       })),
       description: mkstr(`delete single row from the table: ${item.name}`),
     }));
-    ctx.mutations.add(`update_${item.name}_by_pk`, (name) => ({
+    ctx.mutations.add(`update_${item.name}_by_pk`)((name) => ({
       kind: Kind.FIELD_DEFINITION,
       name,
       type: $.named(item.name),

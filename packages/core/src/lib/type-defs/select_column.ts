@@ -8,7 +8,7 @@ export function generateSelectColumn(
   ctx: Context
 ) {
   const columns = getColumns(item, ctx.schema);
-  return ctx.types.add(SuffixMap.select_column(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.select_column(item.name))((name) => ({
     kind: Kind.ENUM_TYPE_DEFINITION,
     name,
     description: mkstr(`select columns of table ${item.name}`),

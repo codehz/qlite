@@ -29,14 +29,14 @@ export function generateRootTypeDefs(schema: GraphQLSchema) {
       }
     }
   }
-  types.add('Query', (name) => ({
+  types.add('Query')((name) => ({
     kind: schema.getQueryType()
       ? Kind.OBJECT_TYPE_EXTENSION
       : Kind.OBJECT_TYPE_DEFINITION,
     name,
     fields: queries.dump(),
   }));
-  types.add('Mutation', (name) => ({
+  types.add('Mutation')((name) => ({
     kind: schema.getMutationType()
       ? Kind.OBJECT_TYPE_EXTENSION
       : Kind.OBJECT_TYPE_DEFINITION,

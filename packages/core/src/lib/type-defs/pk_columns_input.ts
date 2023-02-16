@@ -14,7 +14,7 @@ export function generatePkColumnsInput(
   ctx: Context
 ) {
   const columns = getColumns(item, ctx.schema);
-  return ctx.types.add(SuffixMap.pk_columns_input(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.pk_columns_input(item.name))((name) => ({
     kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
     name,
     description: mkstr(`primary key columns input for table: ${item.name}`),

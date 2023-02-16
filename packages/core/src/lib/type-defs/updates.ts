@@ -24,7 +24,7 @@ export function generateSetInput(
   ctx: Context
 ) {
   const columns = getColumns(item, ctx.schema);
-  return ctx.types.add(SuffixMap.set_input(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.set_input(item.name))((name) => ({
     kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
     name,
     description: mkstr(`input type for updating data in table ${item.name}`),
@@ -91,7 +91,7 @@ export function generateUpdates(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ) {
-  return ctx.types.add(SuffixMap.updates(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.updates(item.name))((name) => ({
     kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
     name,
     fields: mkfields(_generateUpdatesFields(item, ctx)),

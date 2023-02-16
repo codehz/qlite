@@ -18,7 +18,7 @@ export function generateAggregateFields(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ) {
-  return ctx.types.add(SuffixMap.aggregate_fields(item.name), (name) => {
+  return ctx.types.add(SuffixMap.aggregate_fields(item.name))((name) => {
     const columns = getColumns(item, ctx.schema);
     const minmaxfields = columns.map((x) => ({
       kind: Kind.FIELD_DEFINITION as const,
@@ -57,7 +57,7 @@ export function generateAggregateFields(
         },
         min: {
           kind: Kind.FIELD_DEFINITION,
-          type: ctx.types.add(SuffixMap.min_fields(item.name), (name) => ({
+          type: ctx.types.add(SuffixMap.min_fields(item.name))((name) => ({
             kind: Kind.OBJECT_TYPE_DEFINITION,
             name,
             fields: minmaxfields,
@@ -66,7 +66,7 @@ export function generateAggregateFields(
         },
         max: {
           kind: Kind.FIELD_DEFINITION,
-          type: ctx.types.add(SuffixMap.max_fields(item.name), (name) => ({
+          type: ctx.types.add(SuffixMap.max_fields(item.name))((name) => ({
             kind: Kind.OBJECT_TYPE_DEFINITION,
             name,
             fields: minmaxfields,

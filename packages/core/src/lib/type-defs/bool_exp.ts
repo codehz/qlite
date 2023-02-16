@@ -16,7 +16,7 @@ export function generateBoolExp(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ): NamedTypeNode {
-  return ctx.types.add(SuffixMap.bool_exp(item.name), (name) => {
+  return ctx.types.add(SuffixMap.bool_exp(item.name))((name) => {
     const columns = getColumns(item, ctx.schema);
     const relations = getRelations(item, ctx.schema);
     return {

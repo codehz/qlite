@@ -42,14 +42,14 @@ export function _generateQueryParams(
 }
 
 export function generateQuery(item: GraphQLObjectType<any, any>, ctx: Context) {
-  ctx.queries.add(item.name, (name) => ({
+  ctx.queries.add(item.name)((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: $.non_null($.non_null_list($.named(item.name))),
     arguments: _generateQueryParams(item, ctx),
     description: mkstr(`fetch data from the table: ${item.name}`),
   }));
-  ctx.queries.add(item.name + '_aggregate', (name) => ({
+  ctx.queries.add(item.name + '_aggregate')((name) => ({
     kind: Kind.FIELD_DEFINITION,
     name,
     type: $.non_null(generateAggregate(item, ctx)),
@@ -59,7 +59,7 @@ export function generateQuery(item: GraphQLObjectType<any, any>, ctx: Context) {
   const columns = getColumns(item, ctx.schema);
   const pks = columns.filter((x) => x.primary_key);
   if (pks.length) {
-    ctx.queries.add(item.name + '_by_pk', (name) => ({
+    ctx.queries.add(item.name + '_by_pk')((name) => ({
       kind: Kind.FIELD_DEFINITION,
       name,
       type: $.named(item.name),

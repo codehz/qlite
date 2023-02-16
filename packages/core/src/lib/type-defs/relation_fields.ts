@@ -10,7 +10,7 @@ export function generateRelationFields(
 ) {
   const relations = getRelations(item, ctx.schema);
   if (!relations) return void 0;
-  return ctx.types.add(item.name, (name) => ({
+  return ctx.types.add(item.name)((name) => ({
     kind: Kind.OBJECT_TYPE_EXTENSION,
     name,
     fields: relations.map((x) =>

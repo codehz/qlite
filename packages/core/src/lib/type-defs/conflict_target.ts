@@ -7,7 +7,7 @@ export function generateConflictTarget(
   item: GraphQLObjectType<any, any>,
   ctx: Context
 ) {
-  return ctx.types.add(SuffixMap.conflict_target(item.name), (name) => ({
+  return ctx.types.add(SuffixMap.conflict_target(item.name))((name) => ({
     kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
     name,
     description: mkstr(`conflict target for table ${item.name}`),

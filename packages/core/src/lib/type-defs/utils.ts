@@ -23,15 +23,17 @@ import {
 
 export class DefinitionMap<T> {
   #map = new Map<string, T>();
-  add(
-    name: string,
-    lazy: (name: NameNode) => T
-  ): NamedTypeNode {
+  #pending = new Set<string>();
+  add(name: string): (lazy: (name: NameNode) => T) => NamedTypeNode {
     if (this.#map.has(name)) {
-      return $.named(name);
+      return () => $.named(name);
     }
-    this.#map.set(name, lazy(mkname(name)));
-    return $.named(name);
+    this.#pending.add(name);
+    return (lazy: (name: NameNode) => T) => {
+      this.#pending.delete(name);
+      this.#map.set(name, lazy(mkname(name)));
+      return $.named(name);
+    };
   }
 
   add_not_empty(
