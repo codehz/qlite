@@ -15,11 +15,13 @@ import {
   GraphQLFile,
   ReadOnlyDatabaseFile,
   OutputStream,
+  QLiteConfigFile,
 } from './lib/cli-helper.js';
 import { inferSchemaFromDatabase } from './lib/infer.js';
 import {
   filterOutBuiltinDefinitions,
   generateRootTypeDefs,
+  generateSchema,
   generateSqlInitialMigration,
 } from '@qlite/core';
 import { mergeSchemas } from '@graphql-tools/schema';
@@ -65,7 +67,7 @@ const generate = command({
   name: 'generate',
   args: {
     input: positional({
-      type: GraphQLFile,
+      type: QLiteConfigFile,
     }),
     output,
     stripDirectives: flag({
@@ -75,17 +77,8 @@ const generate = command({
     }),
   },
   handler(args) {
-    const typedefs = generateRootTypeDefs(args.input);
-    const schema = mergeSchemas({
-      schemas: [args.input],
-      typeDefs: [typedefs],
-    });
-    if (args.stripDirectives) {
-      const mapped = filterOutBuiltinDefinitions(schema);
-      args.output.write(printSchema(mapped) + '\n');
-    } else {
-      args.output.write(printSchemaWithDirectives(schema) + '\n');
-    }
+    const schema = generateSchema(args.input);
+    args.output.write(printSchema(schema));
   },
 });
 

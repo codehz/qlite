@@ -2,6 +2,9 @@
   "root": true,
   "ignorePatterns": ["**/*"],
   "plugins": ["@nrwl/nx"],
+  "parserOptions": {
+    "ecmaVersion": "latest"
+  },
   "overrides": [
     {
       "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
@@ -32,6 +35,9 @@
             "extendDefaults": true
           }
         ]
+      },
+      "parserOptions": {
+        "ecmaVersion": "latest"
       }
     },
     {
