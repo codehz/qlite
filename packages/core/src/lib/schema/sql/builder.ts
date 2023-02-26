@@ -67,7 +67,31 @@ class SQLMapper {
             true
           );
         } else {
-          throw new Error('not implemented');
+          const arg = field.arguments as {
+            limit?: number;
+            offset?: number;
+            where?: Record<string, unknown>;
+            order_by?: Record<string, string>;
+          };
+          const sql = [
+            fmt`SELECT json_group_array(%s) AS value`(selections),
+            submapper.from,
+            fmt`WHERE %s`(
+              [where, trueMap(arg.where, (input) => submapper.where(input))]
+                .filter(Boolean)
+                .join(' AND ')
+            ),
+            trueMap2(
+              arg.order_by,
+              (arg) => submapper.order_by(arg),
+              (input) => fmt`ORDER BY %s`(input)
+            ),
+            trueMap(arg.limit, fmt`LIMIT %s`),
+            trueMap(arg.offset, fmt`OFFSET %s`),
+          ]
+            .filter(Boolean)
+            .join(' ');
+          json.add$(field.alias, sql, true);
         }
       }
     }
