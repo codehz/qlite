@@ -15,13 +15,15 @@ class SQLMapper {
     public config: QLiteConfig,
     public typename: string,
     public table: QLiteTableConfig,
-    public alias: string,
+    public alias: string = table.dbname ?? typename,
     public params: SQLParameters = new SQLParameters()
   ) {
     this.tablename = table.dbname ?? typename;
   }
   get from() {
-    return fmt`FROM %q AS %q`(this.tablename, this.alias);
+    return this.alias === this.tablename
+      ? fmt`FROM %q`(this.tablename)
+      : fmt`FROM %q AS %q`(this.tablename, this.alias);
   }
   relation(
     name: string,
@@ -276,6 +278,17 @@ class SQLMapper {
     }
     return queue.join(', ');
   }
+
+  by_pks(arg: Record<string, unknown>): string {
+    const where: string[] = [];
+    for (const [key, value] of Object.entries(arg)) {
+      const columnname = this.table.columns[key].dbname ?? key;
+      where.push(
+        fmt`%q.%q = %?`(this.alias, columnname, this.params.add(value))
+      );
+    }
+    return where.join(' AND ');
+  }
 }
 
 export type SQLQuery = [sql: string, parameters: unknown[]];
@@ -292,7 +305,7 @@ export function buildQuery(
     where?: Record<string, unknown>;
     order_by?: Record<string, string>;
   };
-  const mapper = new SQLMapper(config, typename, table, '@' + root.alias);
+  const mapper = new SQLMapper(config, typename, table);
   const json = mapper.selections(root.subfields);
   const sql = [
     fmt`SELECT %s AS value`(json),
@@ -327,7 +340,7 @@ export function buildQueryAggregate(
     where?: Record<string, unknown>;
     order_by?: Record<string, string>;
   };
-  const mapper = new SQLMapper(config, typename, table, '@' + root.alias);
+  const mapper = new SQLMapper(config, typename, table);
   let nodes, aggregate;
   for (const field of root.subfields) {
     if (field.name === 'nodes') {
@@ -369,19 +382,28 @@ export function buildQueryByPk(
   table: QLiteTableConfig,
   root: FieldInfo
 ): SQLQuery {
-  const mapper = new SQLMapper(config, typename, table, '@' + root.alias);
+  const mapper = new SQLMapper(config, typename, table);
   const json = mapper.selections(root.subfields);
-  const where: string[] = [];
-  for (const [key, value] of Object.entries(root.arguments)) {
-    const columnname = mapper.table.columns[key].dbname ?? key;
-    where.push(
-      fmt`%q.%q = %?`(mapper.alias, columnname, mapper.params.add(value))
-    );
-  }
   const sql = fmt`SELECT %s AS value %s WHERE %s`(
     json,
     mapper.from,
-    where.join(', ')
+    mapper.by_pks(root.arguments)
+  );
+  return [sql, mapper.params.array];
+}
+
+export function buildDeleteByPk(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table);
+  const json = mapper.selections(root.subfields);
+  const sql = fmt`DELETE %s WHERE %s RETURNING %s`(
+    mapper.from,
+    mapper.by_pks(root.arguments),
+    json
   );
   return [sql, mapper.params.array];
 }

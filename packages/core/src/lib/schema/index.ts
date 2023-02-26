@@ -22,6 +22,7 @@ import {
 import { parseResolveInfo } from '../selection-utils.js';
 import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
 import {
+  buildDeleteByPk,
   buildQuery,
   buildQueryAggregate,
   buildQueryByPk,
@@ -570,6 +571,19 @@ function generateMutation<RuntimeContext>(
         type: ctx.getOutputType(typename),
         args: pk_fields,
         description: `delete single row from the table: ${typename}`,
+        async resolve(_src, args, rt, info) {
+          const root = parseResolveInfo(args, info);
+          const [sql, parameters] = buildDeleteByPk(
+            ctx.config,
+            typename,
+            table,
+            root
+          );
+          const item = (await ctx.trait.one(rt, sql, parameters)) as
+            | { value: string }
+            | undefined;
+          return item ? JSON.parse(item.value) : undefined;
+        },
       })
     );
     ctx.addMutation(
