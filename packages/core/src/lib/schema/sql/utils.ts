@@ -1,3 +1,5 @@
+import { QLitePrimitiveTypeName } from '../../config.js';
+
 export function quoteStr(str: string, quote = '"') {
   return quote + str.replaceAll(quote, quote + quote) + quote;
 }
@@ -20,6 +22,22 @@ export function fmt(
       if (a === 'a') return smartQuote(args.shift());
       if (a === '?') return '?' + args.shift();
     });
+}
+
+export function resolveSqlType(
+  input: QLitePrimitiveTypeName,
+  not_null = false
+): string {
+  const raw: Record<QLitePrimitiveTypeName, string> = {
+    boolean: 'BOOLEAN',
+    integer: 'INTEGER',
+    json: 'JSON',
+    real: 'REAL',
+    text: 'TEXT',
+    timestamp: 'TIMESTAMP',
+    uuid: 'UUID',
+  };
+  return raw[input] + (not_null ? ' NOT NULL' : '');
 }
 
 export function trueMap<T>(

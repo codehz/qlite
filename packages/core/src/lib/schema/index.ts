@@ -424,7 +424,7 @@ function generateComparisonType<RuntimeContext>(
   return ctx.addTypeIfNotExists(comparison_exp, () => {
     return new GraphQLInputObjectType({
       name: comparison_exp,
-      fields: {
+      fields: () => ({
         _eq: { type },
         _neq: { type },
         _gt: { type },
@@ -446,20 +446,26 @@ function generateComparisonType<RuntimeContext>(
           : {}),
         ...(typename === 'json'
           ? {
-              path: {
-                type: GraphQLString,
-              },
-              _cast: {
+              _at: {
                 type: new GraphQLInputObjectType({
-                  name: `JSON_cast_exp`,
+                  name: `JSON_at_exp`,
                   fields: {
-                    _integer: {
+                    _path: {
+                      type: NonNull(GraphQLString),
+                    },
+                    json: {
+                      type: ctx.getInputType(comparison_exp),
+                    },
+                    boolean: {
+                      type: generateComparisonType(ctx, 'boolean'),
+                    },
+                    integer: {
                       type: generateComparisonType(ctx, 'integer'),
                     },
-                    _real: {
+                    real: {
                       type: generateComparisonType(ctx, 'real'),
                     },
-                    _text: {
+                    text: {
                       type: generateComparisonType(ctx, 'text'),
                     },
                   },
@@ -494,7 +500,7 @@ function generateComparisonType<RuntimeContext>(
               },
             }
           : {}),
-      },
+      }),
     });
   });
 }
@@ -725,6 +731,7 @@ function generateQuery<RuntimeContext>(
       const list = (await ctx.trait.all(rt, sql, parameters)) as [
         { value: string }
       ];
+      console.log(list);
       return list.map((x) => JSON.parse(x.value));
     },
   }));

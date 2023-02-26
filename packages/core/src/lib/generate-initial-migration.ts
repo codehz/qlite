@@ -1,20 +1,5 @@
-import { QLiteConfig, QLitePrimitiveTypeName } from './config.js';
-
-function resolveSqlType(
-  input: QLitePrimitiveTypeName,
-  not_null: boolean
-): string {
-  const raw: Record<QLitePrimitiveTypeName, string> = {
-    boolean: 'BOOLEAN',
-    integer: 'INTEGER',
-    json: 'JSON',
-    real: 'REAL',
-    text: 'TEXT',
-    timestamp: 'TIMESTAMP',
-    uuid: 'UUID',
-  };
-  return raw[input] + (not_null ? ' NOT NULL' : '');
-}
+import { QLiteConfig } from './config.js';
+import { resolveSqlType } from './schema/sql/utils.js';
 
 export function generateSqlInitialMigration(config: QLiteConfig) {
   const output: string[] = [];

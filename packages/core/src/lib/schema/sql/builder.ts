@@ -1,10 +1,15 @@
-import { QLiteConfig, QLiteTableConfig } from '../../config.js';
+import {
+  QLiteConfig,
+  QLitePrimitiveTypeName,
+  QLiteTableConfig,
+} from '../../config.js';
 import { FieldInfo } from '../../selection-utils.js';
 import {
   fmt,
   JsonSelections,
   MaybeArray,
   normalizeInputArray,
+  resolveSqlType,
   SQLParameters,
   trueMap,
   trueMap2,
@@ -150,31 +155,67 @@ class SQLMapper {
       _regex: 'REGEXP',
       _nregexp: 'NOT REGEXP',
     } as Record<string, string>;
-    let resolved: string;
-    if ((resolved = bins[op])) {
-      return (l, r) => fmt`%s %s %?`(l, resolved, this.params.add(r));
-    } else
-      switch (op) {
-        case '_in':
-          return (l, r) =>
-            fmt`EXISTS (SELECT 1 FROM json_each(%?) AS "$" WHERE "$".value = %s)`(
-              this.params.add(normalizeInputArray(r) ?? []),
-              l
-            );
-        case '_nin':
-          return (l, r) =>
-            fmt`NOT EXISTS (SELECT 1 FROM json_each(%?) AS "$" WHERE "$".value = %s)`(
-              this.params.add(normalizeInputArray(r) ?? []),
-              l
-            );
-        case '_is_null':
-          return (l, r) => fmt`%s ISNULL = NOT NOT %?`(l, this.params.add(r));
-      }
+    const handlers: Record<string, (l: string, r: unknown) => string> = {
+      _in: (l, r) =>
+        fmt`EXISTS (SELECT 1 FROM json_each(%?) WHERE value = %s)`(
+          this.params.add(normalizeInputArray(r) ?? []),
+          l
+        ),
+      _nin: (l, r) =>
+        fmt`NOT EXISTS (SELECT 1 FROM json_each(%?) WHERE value = %s)`(
+          this.params.add(normalizeInputArray(r) ?? []),
+          l
+        ),
+      _is_null: (l, r) => fmt`%s ISNULL = NOT NOT %?`(l, this.params.add(r)),
+      _at: (l, r) => {
+        const { _path, ...rest } = r as { _path: string } & Record<
+          QLitePrimitiveTypeName,
+          Record<string, unknown>
+        >;
+        const queue: string[] = [];
+        for (const [key, value] of Object.entries(rest)) {
+          const exp =
+            key === 'json'
+              ? fmt`%s -> %t`(l, _path)
+              : fmt`CAST(%s ->> %t AS %s)`(
+                  l,
+                  _path,
+                  resolveSqlType(key as QLitePrimitiveTypeName)
+                );
+          queue.push(...this.#where_exprs(exp, value));
+        }
+        return queue.filter(Boolean).join(' AND ');
+      },
+      _length: (l, r) =>
+        this.#where_exprs(
+          fmt`json_array_length(%s)`(l),
+          r as Record<string, unknown>
+        ).join(' AND '),
+      _has_key: (l, r) =>
+        fmt`EXISTS (SELECT 1 FROM json_each(%s) WHERE key = %?)`(
+          l,
+          this.params.add(r)
+        ),
+      _has_keys_all: (l, r) =>
+        fmt`NOT EXISTS (SELECT 1 FROM json_each(%?) AS "$inp" LEFT JOIN json_each(%s) AS "$src" ON "$src".key = "$inp".value WHERE "$src".key IS NULL)`(
+          this.params.add(normalizeInputArray(r) ?? []),
+          l
+        ),
+      _has_keys_any: (l, r) =>
+        fmt`EXISTS (SELECT 1 FROM json_each(%s) AS "$src" WHERE EXISTS (SELECT 1 FROM json_each(%?) AS "$inp" WHERE "$src".key = "$inp".value))`(
+          l,
+          this.params.add(normalizeInputArray(r) ?? [])
+        ),
+    };
+    let bin: string;
+    let handler;
+    if ((bin = bins[op])) {
+      return (l, r) => fmt`%s %s %?`(l, bin, this.params.add(r));
+    } else if ((handler = handlers[op])) return handler;
     throw new Error('invalid cond ' + op);
   }
-  #where_exprs(name: string, value: Record<string, unknown>): string[] {
+  #where_exprs(left: string, value: Record<string, unknown>): string[] {
     return Object.entries(value).map(([type, value]) => {
-      const left = fmt`%q.%q`(this.alias, name);
       return this.#where_cond(type)(left, value);
     });
   }
@@ -204,7 +245,7 @@ class SQLMapper {
           if (matched) {
             conds.push(
               ...this.#where_exprs(
-                matched.dbname ?? key,
+                fmt`%q.%q`(this.alias, matched.dbname ?? key),
                 value as Record<string, unknown>
               )
             );
@@ -604,7 +645,7 @@ export function buildInsertOne(
           ),
         ]
       : ['DEFAULT VALUES']),
-    fmt`RETURNING %s as value`(json),
+    fmt`RETURNING %s AS value`(json),
   ]
     .filter(Boolean)
     .join(' ');
@@ -659,7 +700,7 @@ export function buildInsert(
     trueMap(normalizeInputArray(args.on_conflict), (conflicts) =>
       mapper.on_conflict(conflicts)
     ),
-    trueMap(returning, (json) => fmt`RETURNING %s as value`(json)),
+    trueMap(returning, (json) => fmt`RETURNING %s AS value`(json)),
   ]
     .filter(Boolean)
     .join(' ');
@@ -747,7 +788,7 @@ export function buildUpdateByPk(
 ): SQLQuery {
   const mapper = new SQLMapper(config, typename, table);
   const json = mapper.selections(root.subfields);
-  const sql = fmt`UPDATE %q SET %s WHERE %s RETURNING %s as value`(
+  const sql = fmt`UPDATE %q SET %s WHERE %s RETURNING %s AS value`(
     mapper.tablename,
     mapper.update(root.arguments),
     mapper.by_pks(
