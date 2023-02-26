@@ -158,13 +158,13 @@ class SQLMapper {
         case '_in':
           return (l, r) =>
             fmt`EXISTS (SELECT 1 FROM json_each(%?) AS "$" WHERE "$".value = %s)`(
-              this.params.add(r),
+              this.params.add(normalizeInputArray(r) ?? []),
               l
             );
         case '_nin':
           return (l, r) =>
             fmt`NOT EXISTS (SELECT 1 FROM json_each(%?) AS "$" WHERE "$".value = %s)`(
-              this.params.add(r),
+              this.params.add(normalizeInputArray(r) ?? []),
               l
             );
         case '_is_null':
