@@ -263,7 +263,7 @@ function generateAuxiliary<RuntimeContext>(
       fields: () => ({
         ...generateUpdateFields(ctx, typename, table),
         where: {
-          type: ctx.getInputType(`${typename}_bool_exp`),
+          type: NonNull(ctx.getInputType(`${typename}_bool_exp`)),
         },
       }),
     })
@@ -525,7 +525,10 @@ function generateMutation<RuntimeContext>(
   ctx.addMutation(table.root_fields?.update ?? `update_${typename}`, () => ({
     type: ctx.getOutputType(`${typename}_mutation_response`),
     args: {
-      // TODO: update fields
+      ...generateUpdateFields(ctx, typename, table),
+      where: {
+        type: NonNull(ctx.getInputType(`${typename}_bool_exp`)),
+      },
     },
     description: `update data of the table: ${typename}`,
   }));
@@ -559,7 +562,7 @@ function generateMutation<RuntimeContext>(
         args: {
           ...generateUpdateFields(ctx, typename, table),
           pk_columns: {
-            type: ctx.getInputType(`${typename}_pk_columns`),
+            type: NonNull(ctx.getInputType(`${typename}_pk_columns`)),
           },
         },
         description: `update single row of the table: ${typename}`,
