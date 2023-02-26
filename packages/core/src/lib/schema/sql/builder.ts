@@ -288,3 +288,26 @@ export function buildQuery(
     .join(' ');
   return [sql, mapper.params.array];
 }
+
+export function buildQueryByPk(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table, '@' + root.alias);
+  const json = mapper.selections(root.subfields);
+  const where: string[] = [];
+  for (const [key, value] of Object.entries(root.arguments)) {
+    const columnname = mapper.table.columns[key].dbname ?? key;
+    where.push(
+      fmt`%q.%q = %?`(mapper.alias, columnname, mapper.params.add(value))
+    );
+  }
+  const sql = fmt`SELECT %s AS value %s WHERE %s`(
+    json,
+    mapper.from,
+    where.join(', ')
+  );
+  return [sql, mapper.params.array];
+}

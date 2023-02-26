@@ -20,7 +20,7 @@ import {
 } from '../config.js';
 import { parseResolveInfo } from '../selection-utils.js';
 import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
-import { buildQuery } from './sql/builder.js';
+import { buildQuery, buildQueryByPk } from './sql/builder.js';
 import {
   ListNonNull,
   mapPrimitiveType,
@@ -605,6 +605,21 @@ function generateQuery<RuntimeContext>(
         type: ctx.getOutputType(typename),
         description: `fetch data from the table: ${typename} using primary key columns`,
         args: pk_fields,
+        async resolve(_src, args, rt, info) {
+          const root = parseResolveInfo(args, info);
+          const [sql, parameters] = buildQueryByPk(
+            ctx.config,
+            typename,
+            table,
+            root
+          );
+          const item = (await ctx.trait.one(rt, sql, parameters)) as
+            | {
+                value: string;
+              }
+            | undefined;
+          return item ? JSON.parse(item.value) : undefined;
+        },
       })
     );
 }
