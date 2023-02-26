@@ -611,6 +611,61 @@ export function buildInsertOne(
   return [sql, mapper.params.array];
 }
 
+export function buildInsert(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table);
+  const args = root.arguments as {
+    objects: MaybeArray<Record<string, unknown>>;
+    on_conflict: MaybeArray<{
+      target?: {
+        columns: MaybeArray<string>;
+        where?: Record<string, unknown>;
+      };
+      update_columns: MaybeArray<string>;
+      where?: Record<string, unknown>;
+    }>;
+  };
+  const objects = normalizeInputArray(args.objects) ?? [];
+  if (!objects) throw new Error('invalid insert');
+  const column_set = new Set<string>();
+  for (const object of objects) {
+    for (const key of Object.keys(object)) {
+      column_set.add(key);
+    }
+  }
+  const insert_columns = [];
+  const select_columns = [];
+  for (const key of column_set) {
+    insert_columns.push(fmt`%q`(mapper.table.columns[key].dbname ?? key));
+    select_columns.push(fmt`value ->> %t`(key));
+  }
+  let returning;
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      returning = mapper.selections(field.subfields);
+    }
+  }
+  const sql = [
+    fmt`INSERT INTO %q`(mapper.tablename),
+    fmt`(%s)`(insert_columns.join(', ')),
+    fmt`SELECT %s FROM json_each(%?)`(
+      select_columns.join(', '),
+      mapper.params.add(args.objects)
+    ),
+    trueMap(normalizeInputArray(args.on_conflict), (conflicts) =>
+      mapper.on_conflict(conflicts)
+    ),
+    trueMap(returning, (json) => fmt`RETURNING %s as value`(json)),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return [sql, mapper.params.array, !!returning];
+}
+
 export function buildUpdate(
   config: QLiteConfig,
   typename: string,

@@ -24,6 +24,7 @@ import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
 import {
   buildDelete,
   buildDeleteByPk,
+  buildInsert,
   buildInsertOne,
   buildQuery,
   buildQueryAggregate,
@@ -517,6 +518,25 @@ function generateMutation<RuntimeContext>(
       },
     },
     description: `insert data into the table: ${typename}`,
+    async resolve(_src, args, rt, info) {
+      const root = parseResolveInfo(args, info);
+      const [sql, parameters, doReturning = false] = buildInsert(
+        ctx.config,
+        typename,
+        table,
+        root
+      );
+      const { affected_rows, returning } = await ctx.trait.mutate(
+        rt,
+        sql,
+        parameters,
+        doReturning
+      );
+      return {
+        affected_rows,
+        returning: returning.map((x) => JSON.parse(x.value)),
+      };
+    },
   }));
   ctx.addMutation(
     table.root_fields?.insert_one ?? `insert_${typename}_one`,
