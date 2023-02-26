@@ -86,8 +86,8 @@ class SQLMapper {
               (arg) => submapper.order_by(arg),
               (input) => fmt`ORDER BY %s`(input)
             ),
-            trueMap(arg.limit, fmt`LIMIT %s`),
-            trueMap(arg.offset, fmt`OFFSET %s`),
+            trueMap(arg.limit, (lim) => fmt`LIMIT %?`(this.params.add(lim))),
+            trueMap(arg.offset, (off) => fmt`OFFSET %?`(this.params.add(off))),
           ]
             .filter(Boolean)
             .join(' ');
@@ -265,8 +265,8 @@ export function buildQuery(
       (arg) => mapper.order_by(arg),
       (input) => fmt`ORDER BY %s`(input)
     ),
-    trueMap(arg.limit, fmt`LIMIT %s`),
-    trueMap(arg.offset, fmt`OFFSET %s`),
+    trueMap(arg.limit, (lim) => fmt`LIMIT %?`(mapper.params.add(lim))),
+    trueMap(arg.offset, (off) => fmt`OFFSET %?`(mapper.params.add(off))),
   ]
     .filter(Boolean)
     .join(' ');
