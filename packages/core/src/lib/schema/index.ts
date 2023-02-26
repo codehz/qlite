@@ -250,29 +250,25 @@ function generateAuxiliary<RuntimeContext>(
       })
     );
   if (notEmptyObject(json_columns)) {
-    for (const kind of ['prepend', 'append', 'patch']) {
-      ctx.addType(
-        new GraphQLInputObjectType({
-          name: `${typename}_json_${kind}_input`,
-          fields: mapObject(json_columns, { type: GraphQLJSON }),
-        })
-      );
-    }
-    for (const kind of ['insert', 'replace', 'set']) {
-      ctx.addType(
-        new GraphQLInputObjectType({
-          name: `${typename}_json_${kind}_input`,
-          fields: mapObject(json_columns, {
-            type: ctx.getInputType('json_mutation_by_path_input'),
-          }),
-        })
-      );
-    }
     ctx.addType(
       new GraphQLInputObjectType({
         name: `${typename}_json_remove_input`,
         fields: mapObject(json_columns, {
-          type: ListNonNull(GraphQLString),
+          type: NonNull(GraphQLString),
+        }),
+      })
+    );
+    ctx.addType(
+      new GraphQLInputObjectType({
+        name: `${typename}_json_patch_input`,
+        fields: mapObject(json_columns, { type: GraphQLJSON }),
+      })
+    );
+    ctx.addType(
+      new GraphQLInputObjectType({
+        name: `${typename}_json_mutation_by_path_input`,
+        fields: mapObject(json_columns, {
+          type: ctx.getInputType('json_mutation_by_path_input'),
         }),
       })
     );
@@ -395,16 +391,20 @@ function generateUpdateFields<RuntimeContext>(
       : {}),
     ...(notEmptyObject(json_columns)
       ? {
-          ...Object.fromEntries(
-            ['prepend', 'append', 'patch', 'remove'].map((kind) => [
-              `_${kind}`,
-              { type: ctx.getInputType(`${typename}_json_${kind}_input`) },
-            ])
-          ),
+          _remove: {
+            type: ctx.getInputType(`${typename}_json_remove_input`),
+          },
+          _patch: {
+            type: ctx.getInputType(`${typename}_json_patch_input`),
+          },
           ...Object.fromEntries(
             ['set', 'insert', 'replace'].map((kind) => [
               `_${kind}_path`,
-              { type: ctx.getInputType(`${typename}_json_${kind}_input`) },
+              {
+                type: ctx.getInputType(
+                  `${typename}_json_mutation_by_path_input`
+                ),
+              },
             ])
           ),
         }

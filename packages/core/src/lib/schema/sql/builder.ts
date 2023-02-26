@@ -318,6 +318,45 @@ class SQLMapper {
             );
           }
           break;
+        case '_remove':
+        case '_patch':
+          for (const [key, value] of Object.entries(
+            obj as Record<string, unknown>
+          )) {
+            const columnname = this.table.columns[key].dbname ?? key;
+            updates.push(
+              fmt`%q = json${method}(%q.%q, %?)`(
+                columnname,
+                this.tablename,
+                columnname,
+                this.params.add(value)
+              )
+            );
+          }
+          break;
+        case '_insert_path':
+        case '_replce_path':
+        case '_set_path':
+          for (const [key, value] of Object.entries(
+            obj as Record<string, unknown>
+          )) {
+            const columnname = this.table.columns[key].dbname ?? key;
+            updates.push(
+              fmt`%q = json${method.replace(
+                /_path$/,
+                ''
+              )}(%q.%q, %?, json(%?))`(
+                columnname,
+                this.tablename,
+                columnname,
+                this.params.add((value as { path: string }).path),
+                this.params.add(
+                  JSON.stringify((value as { value: unknown }).value)
+                )
+              )
+            );
+          }
+          break;
       }
     }
     return updates.join(', ');
