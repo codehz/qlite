@@ -105,14 +105,24 @@ class SQLMapper {
       _gte: '>=',
       _lt: '<',
       _lte: '<=',
-      _in: 'IN',
-      _nin: 'NOT IN',
     } as Record<string, string>;
     let resolved: string;
     if ((resolved = bins[op])) {
       return (l, r) => fmt`%s %s %?`(l, resolved, this.params.add(r));
     } else
       switch (op) {
+        case '_in':
+          return (l, r) =>
+            fmt`EXISTS (SELECT 1 FROM json_each(%?) AS "$" WHERE "$".value = %s)`(
+              this.params.add(r),
+              l
+            );
+        case '_nin':
+          return (l, r) =>
+            fmt`NOT EXISTS (SELECT 1 FROM json_each(%?) AS "$" WHERE "$".value = %s)`(
+              this.params.add(r),
+              l
+            );
         case '_is_null':
           return (l, r) => fmt`%s ISNULL = NOT NOT %?`(l, this.params.add(r));
       }

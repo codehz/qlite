@@ -74,7 +74,11 @@ export class SQLParameters {
 
   add(parameter: unknown) {
     return this.array.push(
-      typeof parameter === 'boolean' ? +parameter : parameter
+      typeof parameter === 'boolean'
+        ? +parameter
+        : typeof parameter === 'object'
+        ? JSON.stringify(parameter)
+        : parameter
     );
   }
 }
