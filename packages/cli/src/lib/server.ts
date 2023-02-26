@@ -22,9 +22,11 @@ export function serveHttp(config: QLiteConfig, serve_config: ServeConfig) {
   const get_changes = db.prepare('select changes() as affected_rows;');
   if (!serve_config.db) {
     const migration = generateSqlInitialMigration(config);
+    if (serve_config.debug) console.log(migration);
     db.exec(migration);
     if (serve_config.seed) {
       const seed = readFileSync(serve_config.seed, { encoding: 'utf8' });
+      if (serve_config.debug) console.log(seed);
       db.exec(seed);
     }
   }
