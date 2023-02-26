@@ -26,6 +26,7 @@ import {
   buildQuery,
   buildQueryAggregate,
   buildQueryByPk,
+  buildUpdateByPk,
 } from './sql/builder.js';
 import {
   ListNonNull,
@@ -597,6 +598,19 @@ function generateMutation<RuntimeContext>(
           },
         },
         description: `update single row of the table: ${typename}`,
+        async resolve(_src, args, rt, info) {
+          const root = parseResolveInfo(args, info);
+          const [sql, parameters] = buildUpdateByPk(
+            ctx.config,
+            typename,
+            table,
+            root
+          );
+          const item = (await ctx.trait.one(rt, sql, parameters)) as
+            | { value: string }
+            | undefined;
+          return item ? JSON.parse(item.value) : undefined;
+        },
       })
     );
   }

@@ -289,6 +289,39 @@ class SQLMapper {
     }
     return where.join(' AND ');
   }
+
+  update(arg: Record<string, unknown>) {
+    const updates: string[] = [];
+    for (const [method, obj] of Object.entries(arg)) {
+      if (!method.startsWith('_')) continue;
+      switch (method) {
+        case '_set':
+          for (const [key, value] of Object.entries(
+            obj as Record<string, unknown>
+          )) {
+            const columnname = this.table.columns[key].dbname ?? key;
+            updates.push(fmt`%q = %?`(columnname, this.params.add(value)));
+          }
+          break;
+        case '_inc':
+          for (const [key, value] of Object.entries(
+            obj as Record<string, unknown>
+          )) {
+            const columnname = this.table.columns[key].dbname ?? key;
+            updates.push(
+              fmt`%q = %q.%q + %?`(
+                columnname,
+                this.tablename,
+                columnname,
+                this.params.add(value)
+              )
+            );
+          }
+          break;
+      }
+    }
+    return updates.join(', ');
+  }
 }
 
 export type SQLQuery = [sql: string, parameters: unknown[]];
@@ -403,6 +436,25 @@ export function buildDeleteByPk(
   const sql = fmt`DELETE %s WHERE %s RETURNING %s`(
     mapper.from,
     mapper.by_pks(root.arguments),
+    json
+  );
+  return [sql, mapper.params.array];
+}
+
+export function buildUpdateByPk(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table);
+  const json = mapper.selections(root.subfields);
+  const sql = fmt`UPDATE %q SET %s WHERE %s RETURNING %s`(
+    mapper.tablename,
+    mapper.update(root.arguments),
+    mapper.by_pks(
+      (root.arguments as { pk_columns: Record<string, unknown> }).pk_columns
+    ),
     json
   );
   return [sql, mapper.params.array];
