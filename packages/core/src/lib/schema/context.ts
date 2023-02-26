@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { MaybePromise } from '@graphql-tools/utils';
 import {
   GraphQLFieldConfig,
   GraphQLNamedInputType,
@@ -6,18 +8,42 @@ import {
   GraphQLObjectType,
   GraphQLSchema,
 } from 'graphql';
+import { QLiteConfig } from '../config.js';
 import { mapMap } from './utils.js';
 
-export class SchemaGeneratorContext {
+export type SQLiteTrait<Context> = {
+  one(ctx: Context, sql: string, parameters: any[]): MaybePromise<any>;
+  all(ctx: Context, sql: string, parameters: any[]): MaybePromise<any>;
+  mutate(
+    ctx: Context,
+    sql: string,
+    parameters: any[],
+    returning: boolean
+  ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
+  mutate_batch(
+    ctx: Context,
+    tasks: (
+      | {
+          sql: string;
+          parameters: any[];
+        }
+      | undefined
+    )[],
+    returning: boolean
+  ): MaybePromise<{ affected_rows: number; returning: Array<any> }[]>;
+};
+
+export class SchemaGeneratorContext<Context> {
   typesmap = new Map<string, GraphQLNamedType>();
   queries = new Map<
     string,
-    () => GraphQLFieldConfig<unknown, unknown, unknown>
+    () => GraphQLFieldConfig<unknown, Context, any>
   >();
   mutations = new Map<
     string,
-    () => GraphQLFieldConfig<unknown, unknown, unknown>
+    () => GraphQLFieldConfig<unknown, Context, any>
   >();
+  constructor(public trait: SQLiteTrait<Context>, public config: QLiteConfig) {}
 
   addType<T extends GraphQLNamedType>(type: T) {
     this.typesmap.set(type.name, type);
@@ -49,14 +75,14 @@ export class SchemaGeneratorContext {
 
   addQuery(
     name: string,
-    value: () => GraphQLFieldConfig<unknown, unknown, unknown>
+    value: () => GraphQLFieldConfig<unknown, Context, any>
   ) {
     this.queries.set(name, value);
   }
 
   addMutation(
     name: string,
-    value: () => GraphQLFieldConfig<unknown, unknown, unknown>
+    value: () => GraphQLFieldConfig<unknown, Context, any>
   ) {
     this.mutations.set(name, value);
   }

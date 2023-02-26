@@ -101,7 +101,7 @@ export const QLiteTableConfig = z
     root_fields: QLiteTableRootFields.default(() => ({})),
     comments: z.string().optional(),
     columns: z.record(QLiteColumnConfig),
-    relations: z.record(QLiteRelationConfig).optional(),
+    relations: z.record(QLiteRelationConfig).default(() => ({})),
     insert_permissions: z
       .record(QLiteInsertPermissionConfig)
       .default(() => ({})),

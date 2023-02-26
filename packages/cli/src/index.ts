@@ -12,22 +12,17 @@ import {
   string,
 } from 'cmd-ts';
 import {
-  GraphQLFile,
   ReadOnlyDatabaseFile,
   OutputStream,
   QLiteConfigFile,
 } from './lib/cli-helper.js';
 import { inferSchemaFromDatabase } from './lib/infer.js';
 import {
-  filterOutBuiltinDefinitions,
-  generateRootTypeDefs,
   generateSchema,
   generateSqlInitialMigration,
 } from '@qlite/core';
-import { mergeSchemas } from '@graphql-tools/schema';
 import { printSchema } from 'graphql';
 import { serveHttp } from './lib/server.js';
-import { printSchemaWithDirectives } from '@graphql-tools/utils';
 
 const output = option({
   type: OutputStream,
@@ -39,7 +34,7 @@ const init = command({
   name: 'init',
   args: {
     input: positional({
-      type: GraphQLFile,
+      type: QLiteConfigFile,
     }),
     output,
   },
@@ -86,7 +81,7 @@ const serve = command({
   name: 'serve',
   args: {
     input: positional({
-      type: GraphQLFile,
+      type: QLiteConfigFile,
     }),
     port: option({
       long: 'port',

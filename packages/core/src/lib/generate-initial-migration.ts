@@ -1,107 +1,54 @@
-import {
-  GraphQLNonNull,
-  GraphQLObjectType,
-  GraphQLOutputType,
-  GraphQLScalarType,
-  GraphQLSchema,
-} from 'graphql';
-import { getDirective } from '@graphql-tools/utils';
+import { QLiteConfig, QLitePrimitiveTypeName } from './config.js';
 
-function resolveSqlType(input: GraphQLOutputType): string {
-  if (input instanceof GraphQLNonNull) {
-    return resolveSqlType(input.ofType) + ' NOT NULL';
-  } else if (input instanceof GraphQLScalarType) {
-    switch (input.name) {
-      case 'String':
-      case 'ID':
-        return 'TEXT';
-      case 'Int':
-        return 'INTEGER';
-      case 'Float':
-        return 'FLOAT';
-      case 'Boolean':
-        return 'BOOLEAN';
-    }
-    return input.name;
-  }
-  throw new Error('invalid type for column');
+function resolveSqlType(
+  input: QLitePrimitiveTypeName,
+  not_null: boolean
+): string {
+  const raw: Record<QLitePrimitiveTypeName, string> = {
+    boolean: 'BOOLEAN',
+    integer: 'INTEGER',
+    json: 'JSON',
+    real: 'REAL',
+    text: 'TEXT',
+    timestamp: 'TIMESTAMP',
+    uuid: 'UUID',
+  };
+  return raw[input] + (not_null ? ' NOT NULL' : '');
 }
 
-export function generateSqlInitialMigration(schema: GraphQLSchema) {
-  const output = [] as string[];
-  for (const item of Object.values(schema.getTypeMap())) {
-    if (item instanceof GraphQLObjectType) {
-      const entity = getDirective(schema, item, 'entity')?.[0] as {
-        name?: string;
-        without_rowid?: boolean;
-      };
-      if (entity) {
-        const defs: string[] = [];
-        const primaryKeys: string[] = [];
-        const tableOptions: string[] = [')'];
-        if (entity.without_rowid) {
-          tableOptions.push('WITHOUT ROWID');
-        }
-        for (const field of Object.values(item.getFields())) {
-          const column = getDirective(schema, field, 'column')?.[0] as {
-            name?: string;
-            primary_key?: boolean;
-            alias_rowid?: boolean;
-            default?: string;
-          };
-          if (!column) continue;
-          const column_name: string = column.name ?? field.name;
-          let base_def = `${column_name} ${resolveSqlType(field.type)}`;
-          if (column.primary_key) {
-            if (column.alias_rowid) {
-              base_def = `${column_name} INTEGER PRIMARY KEY`;
-            } else {
-              primaryKeys.push(column_name);
-            }
-          }
-          if (column.default) {
-            base_def += ` DEFAULT (${column.default})`;
-          }
-          const check = getDirective(schema, field, 'check')?.[0] as {
-            expr: string;
-          };
-          if (check) {
-            base_def += ` CHECK (${check.expr})`;
-          }
-          defs.push(base_def);
-        }
-        if (primaryKeys.length) {
-          defs.push(`PRIMARY KEY (${primaryKeys.join(', ')})`);
-        }
-        const check = getDirective(schema, item, 'check')?.[0] as {
-          expr: string;
-        };
-        if (check) {
-          defs.push(`CHECK (${check.expr})`);
-        }
-        const foreign_keys =
-          (getDirective(schema, item, 'foreign_key') as {
-            from: string[];
-            to: string[];
-            table: string;
-            deferred?: boolean;
-          }[]) ?? [];
-        defs.push(
-          ...foreign_keys.map((x) => {
-            const keys = x.from.join(', ');
-            const references = x.to.join(', ');
-            const base = `FOREIGN KEY (${keys}) REFERENCES ${x.table}(${references})`;
-            if (x.deferred) {
-              return base + ' DEFERRABLE INITIALLY DEFERRED';
-            }
-            return base;
-          })
-        );
-        output.push(`CREATE TABLE IF NOT EXISTS ${entity.name ?? item.name} (`);
-        output.push(defs.map((x) => '  ' + x).join(',\n'));
-        output.push(tableOptions.join(' ') + ';');
+export function generateSqlInitialMigration(config: QLiteConfig) {
+  const output: string[] = [];
+  for (const [typename, table] of Object.entries(config.tables)) {
+    const tablename = table.dbname ?? typename;
+    const defs: string[] = [];
+    const primary_key_count = Object.values(table.columns).reduce(
+      (o, x) => (x.primary_key ? o + 1 : o),
+      0
+    );
+    const pks: string[] = [];
+    for (const [fieldname, column] of Object.entries(table.columns)) {
+      const columnname = column.dbname ?? fieldname;
+      const txt: string[] = [
+        columnname,
+        resolveSqlType(column.type, column.not_null),
+      ];
+      if (column.primary_key) {
+        if (primary_key_count === 1) txt.push('PRIMARY KEY');
+        else pks.push(columnname);
       }
+      if (column.default) {
+        txt.push(`DEFAULT (${column.default})`);
+      }
+      defs.push(txt.join(' '));
     }
+    output.push(`CREATE TABLE IF NOT EXISTS ${tablename} (`);
+    output.push(
+      defs
+        .filter(Boolean)
+        .map((x) => '  ' + x)
+        .join(',\n')
+    );
+    output.push(`);`);
   }
   return output.join('\n');
 }

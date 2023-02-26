@@ -18,7 +18,9 @@ import {
   QLiteRelationConfig,
   QLiteTableConfig,
 } from '../config.js';
-import { SchemaGeneratorContext } from './context.js';
+import { parseResolveInfo } from '../selection-utils.js';
+import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
+import { buildQuery } from './sql/builder.js';
 import {
   ListNonNull,
   mapPrimitiveType,
@@ -33,14 +35,18 @@ import {
   tableColumnsInfo,
 } from './utils.js';
 
-export function generateSchema(config: QLiteConfig) {
-  const context = new SchemaGeneratorContext();
-  generateTables(context, config.tables);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function generateSchema<RuntimeContext = never>(
+  config: QLiteConfig,
+  trait: SQLiteTrait<RuntimeContext> = {} as never
+) {
+  const context = new SchemaGeneratorContext(trait, config);
+  generateTables<RuntimeContext>(context, config.tables);
   return context.toSchema();
 }
 
-function generateTables(
-  ctx: SchemaGeneratorContext,
+function generateTables<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   tables: Record<string, QLiteTableConfig>
 ) {
   ctx.addType(
@@ -97,14 +103,14 @@ function generateTables(
         }),
       })
     );
-    generateAuxiliary(ctx, key, table);
-    generateQuery(ctx, key, table);
-    generateMutation(ctx, key, table);
+    generateAuxiliary<RuntimeContext>(ctx, key, table);
+    generateQuery<RuntimeContext>(ctx, key, table);
+    generateMutation<RuntimeContext>(ctx, key, table);
   }
 }
 
-function generateAuxiliary(
-  ctx: SchemaGeneratorContext,
+function generateAuxiliary<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   typename: string,
   table: QLiteTableConfig
 ) {
@@ -353,8 +359,8 @@ function generateAuxiliary(
   );
 }
 
-function generateUpdateFields(
-  ctx: SchemaGeneratorContext,
+function generateUpdateFields<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   typename: string,
   table: QLiteTableConfig
 ): Record<string, GraphQLArgumentConfig & GraphQLInputFieldConfig> {
@@ -385,8 +391,8 @@ function generateUpdateFields(
   };
 }
 
-function generateComparisonType(
-  ctx: SchemaGeneratorContext,
+function generateComparisonType<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   typename: QLitePrimitiveTypeName
 ): GraphQLInputObjectType {
   const type = mapPrimitiveType(typename);
@@ -469,8 +475,8 @@ function generateComparisonType(
   });
 }
 
-function generateMutation(
-  ctx: SchemaGeneratorContext,
+function generateMutation<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   typename: string,
   table: QLiteTableConfig
 ) {
@@ -562,8 +568,8 @@ function generateMutation(
   }
 }
 
-function generateQuery(
-  ctx: SchemaGeneratorContext,
+function generateQuery<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   typename: string,
   table: QLiteTableConfig
 ) {
@@ -572,6 +578,14 @@ function generateQuery(
     type: NonNullListNonNull(ctx.getOutputType(typename)),
     description: `fetch data from the table: ${typename}`,
     args: generateQueryParams(ctx, typename),
+    async resolve(_src, args, rt, info) {
+      const root = parseResolveInfo(args, info);
+      const [sql, parameters] = buildQuery(ctx.config, typename, table, root);
+      const list = (await ctx.trait.all(rt, sql, parameters)) as [
+        { value: string }
+      ];
+      return list.map((x) => JSON.parse(x.value));
+    },
   }));
   ctx.addQuery(
     table.root_fields?.select_aggregate ?? `${typename}_aggregate`,
@@ -592,8 +606,8 @@ function generateQuery(
     );
 }
 
-function generateRelationField(
-  ctx: SchemaGeneratorContext,
+function generateRelationField<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   { type, remote_table, comments }: QLiteRelationConfig
 ): GraphQLFieldConfig<unknown, unknown, unknown> {
   if (type === 'object')
@@ -608,8 +622,8 @@ function generateRelationField(
   };
 }
 
-function generateQueryParams(
-  ctx: SchemaGeneratorContext,
+function generateQueryParams<RuntimeContext>(
+  ctx: SchemaGeneratorContext<RuntimeContext>,
   name: string
 ): Record<string, GraphQLArgumentConfig> {
   return {

@@ -1,14 +1,12 @@
 import {
-  fixupResult,
-  generateResolver,
-  generateRootTypeDefs,
+  generateSchema,
   generateSqlInitialMigration,
+  QLiteConfig,
 } from '@qlite/core';
-import { GraphQLError, GraphQLSchema } from 'graphql';
+import { GraphQLError } from 'graphql';
 import { renderGraphiQL } from '@graphql-yoga/render-graphiql';
 import { createServer } from 'node:http';
 import { createYoga } from 'graphql-yoga';
-import { makeExecutableSchema, mergeSchemas } from '@graphql-tools/schema';
 import Database, { SqliteError } from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 
@@ -19,28 +17,25 @@ export interface ServeConfig {
   debug: boolean;
 }
 
-export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
-  const db = new Database(config.db ?? ':memory:');
+export function serveHttp(config: QLiteConfig, serve_config: ServeConfig) {
+  const db = new Database(serve_config.db ?? ':memory:');
   const get_changes = db.prepare('select changes() as affected_rows;');
-  if (!config.db) {
-    const migration = generateSqlInitialMigration(schema);
+  if (!serve_config.db) {
+    const migration = generateSqlInitialMigration(config);
     db.exec(migration);
-    if (config.seed) {
-      const seed = readFileSync(config.seed, { encoding: 'utf8' });
+    if (serve_config.seed) {
+      const seed = readFileSync(serve_config.seed, { encoding: 'utf8' });
       db.exec(seed);
     }
   }
-  const typedefs = generateRootTypeDefs(schema);
-  const merged = mergeSchemas({
-    schemas: [schema],
-    typeDefs: [typedefs],
-  });
-  const resolver = generateResolver(merged, {
+  const schema = generateSchema(config, {
     one(_ctx, raw, parameters) {
       try {
-        if (config.debug) console.log(raw);
+        if (serve_config.debug) console.log(raw, parameters);
         const stmt = db.prepare(raw);
-        return fixupResult(stmt.get(...parameters));
+        return stmt.get(
+          Object.fromEntries(parameters.map((x, i) => [i + 1, x]))
+        );
       } catch (e) {
         if (e instanceof SqliteError) {
           throw new GraphQLError(e.message);
@@ -50,9 +45,11 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
     all(_ctx, raw, parameters) {
       try {
-        if (config.debug) console.log(raw);
+        if (serve_config.debug) console.log(raw, parameters);
         const stmt = db.prepare(raw);
-        return stmt.all(...parameters).map(fixupResult);
+        return stmt.all(
+          Object.fromEntries(parameters.map((x, i) => [i + 1, x]))
+        );
       } catch (e) {
         if (e instanceof SqliteError) {
           throw new GraphQLError(e.message);
@@ -62,20 +59,24 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
     mutate(_ctx, raw, parameters, do_returning: boolean) {
       try {
-        if (config.debug) console.log(raw);
+        if (serve_config.debug) console.log(raw);
         const stmt = db.prepare(raw);
         return db.transaction(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (): { affected_rows: number; returning: Array<any> } => {
             if (do_returning) {
-              const returning = stmt.all(...parameters).map(fixupResult);
+              const returning = stmt.all(
+                Object.fromEntries(parameters.map((x, i) => [i + 1, x]))
+              );
               const affected_rows = get_changes.get().affected_rows as number;
               return {
                 affected_rows,
                 returning,
               };
             } else {
-              stmt.run(...parameters);
+              stmt.run(
+                Object.fromEntries(parameters.map((x, i) => [i + 1, x]))
+              );
               const affected_rows = get_changes.get().affected_rows as number;
               return {
                 affected_rows,
@@ -93,9 +94,15 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
     mutate_batch(_ctx, tasks, do_returning: boolean) {
       try {
-        if (config.debug) tasks.forEach((x) => x && console.log(x?.sql));
+        if (serve_config.debug) tasks.forEach((x) => x && console.log(x?.sql));
         const stmts = tasks.map((input) =>
-          input ? db.prepare(input.sql).bind(...input.parameters) : undefined
+          input
+            ? db
+                .prepare(input.sql)
+                .bind(
+                  Object.fromEntries(input.parameters.map((x, i) => [i + 1, x]))
+                )
+            : undefined
         );
         return db.transaction(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,7 +114,7 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
                     affected_rows: 0,
                     returning: [],
                   };
-                const returning = stmt.all().map(fixupResult);
+                const returning = stmt.all();
                 const affected_rows = get_changes.get().affected_rows as number;
                 return {
                   affected_rows,
@@ -140,15 +147,12 @@ export function serveHttp(schema: GraphQLSchema, config: ServeConfig) {
     },
   });
   const yoga = createYoga({
-    schema: makeExecutableSchema({
-      typeDefs: [merged],
-      resolvers: resolver,
-    }),
+    schema,
     renderGraphiQL,
     graphiql: true,
   });
   const server = createServer(yoga);
-  server.listen(config.port, () => {
-    console.log('Server is running on ' + config.port);
+  server.listen(serve_config.port, () => {
+    console.log('Server is running on ' + serve_config.port);
   });
 }
