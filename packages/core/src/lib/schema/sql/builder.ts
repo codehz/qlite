@@ -105,6 +105,12 @@ class SQLMapper {
       _gte: '>=',
       _lt: '<',
       _lte: '<=',
+      _like: 'LIKE',
+      _nlike: 'NOT LIKE',
+      _glob: 'GLOB',
+      _nglob: 'NOT GLOB',
+      _regex: 'REGEXP',
+      _nregexp: 'NOT REGEXP',
     } as Record<string, string>;
     let resolved: string;
     if ((resolved = bins[op])) {
