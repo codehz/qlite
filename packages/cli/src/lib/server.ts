@@ -96,26 +96,20 @@ export function serveHttp(config: QLiteConfig, serve_config: ServeConfig) {
     },
     mutate_batch(_ctx, tasks, do_returning: boolean) {
       try {
-        if (serve_config.debug) tasks.forEach((x) => x && console.log(x?.sql));
+        if (serve_config.debug)
+          tasks.forEach((x) => x && console.log(x.sql, x.parameters));
         const stmts = tasks.map((input) =>
-          input
-            ? db
-                .prepare(input.sql)
-                .bind(
-                  Object.fromEntries(input.parameters.map((x, i) => [i + 1, x]))
-                )
-            : undefined
+          db
+            .prepare(input.sql)
+            .bind(
+              Object.fromEntries(input.parameters.map((x, i) => [i + 1, x]))
+            )
         );
         return db.transaction(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (): { affected_rows: number; returning: Array<any> }[] => {
             if (do_returning) {
               return stmts.map((stmt) => {
-                if (stmt == null)
-                  return {
-                    affected_rows: 0,
-                    returning: [],
-                  };
                 const returning = stmt.all();
                 const affected_rows = get_changes.get().affected_rows as number;
                 return {
@@ -125,11 +119,6 @@ export function serveHttp(config: QLiteConfig, serve_config: ServeConfig) {
               });
             } else {
               return stmts.map((stmt) => {
-                if (stmt == null)
-                  return {
-                    affected_rows: 0,
-                    returning: [],
-                  };
                 stmt.run();
                 const affected_rows = get_changes.get().affected_rows as number;
                 return {

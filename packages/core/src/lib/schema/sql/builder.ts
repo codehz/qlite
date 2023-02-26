@@ -3,6 +3,7 @@ import { FieldInfo } from '../../selection-utils.js';
 import {
   fmt,
   JsonSelections,
+  MaybeArray,
   normalizeInputArray,
   SQLParameters,
   trueMap,
@@ -19,6 +20,15 @@ class SQLMapper {
     public params: SQLParameters = new SQLParameters()
   ) {
     this.tablename = table.dbname ?? typename;
+  }
+  clone(): SQLMapper {
+    return new SQLMapper(
+      this.config,
+      this.typename,
+      this.table,
+      this.alias,
+      this.params.clone()
+    );
   }
   get from() {
     return this.alias === this.tablename
@@ -368,6 +378,10 @@ export type SQLQuery = [
   parameters: unknown[],
   returning?: boolean
 ];
+export type SQLQueryMany = [
+  tasks: [sql: string, parameters: unknown[]][],
+  returning?: boolean
+];
 
 export function buildQuery(
   config: QLiteConfig,
@@ -516,23 +530,70 @@ export function buildUpdate(
   root: FieldInfo
 ): SQLQuery {
   const mapper = new SQLMapper(config, typename, table);
-  let returning;
+  let returning, where;
   for (const field of root.subfields) {
     if (field.name === 'returning') {
       returning = mapper.selections(field.subfields);
     }
   }
+  if ((where = (root.arguments as { where?: Record<string, unknown> }).where)) {
+    where = mapper.where(where);
+  }
+  const setter = mapper.update(root.arguments);
+  if (!setter) return ['SELECT 1 WHERE 0', []];
   const sql = [
     fmt`UPDATE %q`(mapper.tablename),
-    fmt`SET %s`(mapper.update(root.arguments)),
-    fmt`WHERE %s`(
-      mapper.where((root.arguments as { where: Record<string, unknown> }).where)
-    ),
+    fmt`SET %s`(setter),
+    trueMap(where, fmt`WHERE %s`),
     trueMap(returning, fmt`RETURNING %s AS value`),
   ]
     .filter(Boolean)
     .join(' ');
   return [sql, mapper.params.array, !!returning];
+}
+
+export function buildUpdateMany(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQueryMany {
+  const mapper = new SQLMapper(config, typename, table);
+  let returning: JsonSelections | undefined;
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      returning = mapper.selections(field.subfields);
+    }
+  }
+  const arg = root.arguments as {
+    updates: MaybeArray<
+      Record<string, unknown> & {
+        where?: Record<string, unknown>;
+      }
+    >;
+  };
+  const updates = normalizeInputArray(arg.updates);
+  return [
+    updates?.map((update) => {
+      const cloned = mapper.clone();
+      let where;
+      if ((where = update.where)) {
+        where = cloned.where(where);
+      }
+      const setter = cloned.update(update);
+      if (!setter) return ['SELECT 1 WHERE 0', []];
+      const sql = [
+        fmt`UPDATE %q`(cloned.tablename),
+        fmt`SET %s`(setter),
+        trueMap(where, fmt`WHERE %s`),
+        trueMap(returning, fmt`RETURNING %s AS value`),
+      ]
+        .filter(Boolean)
+        .join(' ');
+      return [sql, cloned.params.array];
+    }) ?? [],
+    !!returning,
+  ];
 }
 
 export function buildUpdateByPk(

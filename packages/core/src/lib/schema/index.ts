@@ -29,6 +29,7 @@ import {
   buildQueryByPk,
   buildUpdate,
   buildUpdateByPk,
+  buildUpdateMany,
 } from './sql/builder.js';
 import {
   ListNonNull,
@@ -603,6 +604,24 @@ function generateMutation<RuntimeContext>(
         },
       },
       description: `update multiples rows of table: ${typename}`,
+      async resolve(_src, args, rt, info) {
+        const root = parseResolveInfo(args, info);
+        const [tasks, doReturning = false] = buildUpdateMany(
+          ctx.config,
+          typename,
+          table,
+          root
+        );
+        const list = await ctx.trait.mutate_batch(
+          rt,
+          tasks.map(([sql, parameters]) => ({ sql, parameters })),
+          doReturning
+        );
+        return list.map(({ affected_rows, returning }) => ({
+          affected_rows,
+          returning: returning.map((x) => JSON.parse(x.value)),
+        }));
+      },
     })
   );
   if (pk_fields) {

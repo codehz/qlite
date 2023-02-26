@@ -22,23 +22,17 @@ export type SQLiteTrait<Context> = {
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
   mutate_batch(
     ctx: Context,
-    tasks: (
-      | {
-          sql: string;
-          parameters: any[];
-        }
-      | undefined
-    )[],
+    tasks: ({
+      sql: string;
+      parameters: any[];
+    })[],
     returning: boolean
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }[]>;
 };
 
 export class SchemaGeneratorContext<Context> {
   typesmap = new Map<string, GraphQLNamedType>();
-  queries = new Map<
-    string,
-    () => GraphQLFieldConfig<unknown, Context, any>
-  >();
+  queries = new Map<string, () => GraphQLFieldConfig<unknown, Context, any>>();
   mutations = new Map<
     string,
     () => GraphQLFieldConfig<unknown, Context, any>

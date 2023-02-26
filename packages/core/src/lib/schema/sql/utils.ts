@@ -45,7 +45,9 @@ export function trueMap2<T1, T2>(
 
 export type MaybeArray<T> = T | T[];
 
-export function normalizeInputArray<T>(x: MaybeArray<T> | undefined): T[] | undefined {
+export function normalizeInputArray<T>(
+  x: MaybeArray<T> | undefined
+): T[] | undefined {
   if (x == null) return void 0;
   if (Array.isArray(x)) return x.length ? x : void 0;
   return [x];
@@ -78,7 +80,7 @@ export class JsonSelections {
 }
 
 export class SQLParameters {
-  readonly array: unknown[] = [];
+  constructor(public readonly array: unknown[] = []) {}
 
   add(parameter: unknown) {
     return this.array.push(
@@ -88,5 +90,9 @@ export class SQLParameters {
         ? JSON.stringify(parameter)
         : parameter
     );
+  }
+
+  clone() {
+    return new SQLParameters(this.array.slice());
   }
 }
