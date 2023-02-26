@@ -73,6 +73,8 @@ export class SQLParameters {
   readonly array: unknown[] = [];
 
   add(parameter: unknown) {
-    return this.array.push(parameter);
+    return this.array.push(
+      typeof parameter === 'boolean' ? +parameter : parameter
+    );
   }
 }
