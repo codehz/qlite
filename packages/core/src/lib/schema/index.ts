@@ -1,6 +1,7 @@
 import {
   GraphQLBoolean,
   GraphQLInputFieldConfig,
+  GraphQLResolveInfo,
   GraphQLString,
 } from 'graphql';
 import { GraphQLEnumType } from 'graphql';
@@ -20,7 +21,11 @@ import {
 } from '../config.js';
 import { parseResolveInfo } from '../selection-utils.js';
 import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
-import { buildQuery, buildQueryByPk } from './sql/builder.js';
+import {
+  buildQuery,
+  buildQueryAggregate,
+  buildQueryByPk,
+} from './sql/builder.js';
 import {
   ListNonNull,
   mapPrimitiveType,
@@ -43,6 +48,16 @@ export function generateSchema<RuntimeContext = never>(
   const context = new SchemaGeneratorContext(trait, config);
   generateTables<RuntimeContext>(context, config.tables);
   return context.toSchema();
+}
+
+function dollerResolver(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  obj: any,
+  _args: unknown,
+  _ctx: unknown,
+  info: GraphQLResolveInfo
+) {
+  return obj['$' + info.path.key];
 }
 
 function generateTables<RuntimeContext>(
@@ -97,6 +112,7 @@ function generateTables<RuntimeContext>(
                     }
                   : undefined,
               description: comments,
+              resolve: dollerResolver,
             })
           ),
           ...mapObject(relations, (value) => generateRelationField(ctx, value)),
@@ -308,6 +324,7 @@ function generateAuxiliary<RuntimeContext>(
                 type: GraphQLBoolean,
               },
             },
+            resolve: dollerResolver,
           },
         };
         if (notEmptyObject(sortable_columns)) {
@@ -596,6 +613,24 @@ function generateQuery<RuntimeContext>(
       type: ctx.getOutputType(`${typename}_aggregate`),
       description: `fetch data from the table: ${typename}`,
       args: generateQueryParams(ctx, typename),
+      async resolve(_src, args, rt, info) {
+        const root = parseResolveInfo(args, info);
+        const [sql, parameters] = buildQueryAggregate(
+          ctx.config,
+          typename,
+          table,
+          root
+        );
+        const { nodes, aggregate } = (await ctx.trait.one(
+          rt,
+          sql,
+          parameters
+        )) as { nodes?: string; aggregate?: string };
+        return {
+          nodes: nodes ? JSON.parse(nodes) : [],
+          aggregate: aggregate ? JSON.parse(aggregate) : {},
+        };
+      },
     })
   );
   if (pk_fields)

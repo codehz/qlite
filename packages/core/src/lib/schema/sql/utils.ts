@@ -43,6 +43,14 @@ export function trueMap2<T1, T2>(
   return trueMap(cb1(f), cb2);
 }
 
+export type MaybeArray<T> = T | T[];
+
+export function normalizeInputArray<T>(x: MaybeArray<T> | undefined): T[] | undefined {
+  if (x == null) return void 0;
+  if (Array.isArray(x)) return x.length ? x : void 0;
+  return [x];
+}
+
 export class JsonSelections {
   #selections = new Map<string, string>();
 

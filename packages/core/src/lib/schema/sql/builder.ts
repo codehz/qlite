@@ -3,6 +3,7 @@ import { FieldInfo } from '../../selection-utils.js';
 import {
   fmt,
   JsonSelections,
+  normalizeInputArray,
   SQLParameters,
   trueMap,
   trueMap2,
@@ -93,6 +94,31 @@ class SQLMapper {
             .join(' ');
           json.add$(field.alias, sql, true);
         }
+      }
+    }
+    return json;
+  }
+  aggregate(fields: readonly FieldInfo[]) {
+    const json = new JsonSelections();
+    for (const field of fields) {
+      if (field.name === 'count') {
+        let count_arg = trueMap(
+          normalizeInputArray(field.arguments['columns'] as string),
+          (columns) =>
+            columns
+              .map((x) =>
+                fmt`%q.%q`(this.alias, this.table.columns[x].dbname ?? x)
+              )
+              .join(', ')
+        );
+        if (field.arguments['distinct'] && count_arg)
+          count_arg = 'DISTINCT ' + count_arg;
+        json.add$(
+          field.alias,
+          count_arg ? fmt`count(%s)`(count_arg) : `count(*)`
+        );
+      } else {
+        throw new Error('not implemented');
       }
     }
     return json;
@@ -270,6 +296,54 @@ export function buildQuery(
   const json = mapper.selections(root.subfields);
   const sql = [
     fmt`SELECT %s AS value`(json),
+    mapper.from,
+    trueMap2(
+      arg.where,
+      (arg) => mapper.where(arg),
+      (input) => fmt`WHERE %s`(input)
+    ),
+    trueMap2(
+      arg.order_by,
+      (arg) => mapper.order_by(arg),
+      (input) => fmt`ORDER BY %s`(input)
+    ),
+    trueMap(arg.limit, (lim) => fmt`LIMIT %?`(mapper.params.add(lim))),
+    trueMap(arg.offset, (off) => fmt`OFFSET %?`(mapper.params.add(off))),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return [sql, mapper.params.array];
+}
+
+export function buildQueryAggregate(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const arg = root.arguments as {
+    limit?: number;
+    offset?: number;
+    where?: Record<string, unknown>;
+    order_by?: Record<string, string>;
+  };
+  const mapper = new SQLMapper(config, typename, table, '@' + root.alias);
+  let nodes, aggregate;
+  for (const field of root.subfields) {
+    if (field.name === 'nodes') {
+      nodes = mapper.selections(field.subfields);
+    } else if (field.name === 'aggregate') {
+      aggregate = mapper.aggregate(field.subfields);
+    }
+  }
+  const sql = [
+    'SELECT',
+    [
+      trueMap(nodes, fmt`json_group_array(%s) AS nodes`),
+      trueMap(aggregate, fmt`%s AS aggregate`),
+    ]
+      .filter(Boolean)
+      .join(', '),
     mapper.from,
     trueMap2(
       arg.where,
