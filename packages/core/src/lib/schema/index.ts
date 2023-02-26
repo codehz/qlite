@@ -672,6 +672,7 @@ function generateRelationField<RuntimeContext>(
     type: NonNullListNonNull(ctx.getOutputType(remote_table)),
     description: comments,
     args: generateQueryParams(ctx, remote_table),
+    resolve: dollerResolver,
   };
 }
 
