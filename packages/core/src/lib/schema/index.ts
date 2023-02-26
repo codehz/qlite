@@ -22,6 +22,7 @@ import {
 import { parseResolveInfo } from '../selection-utils.js';
 import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
 import {
+  buildDelete,
   buildDeleteByPk,
   buildQuery,
   buildQueryAggregate,
@@ -533,7 +534,7 @@ function generateMutation<RuntimeContext>(
     })
   );
   ctx.addMutation(table.root_fields?.delete ?? `delete_${typename}`, () => ({
-    type: ctx.getOutputType(`${typename}_mutation_response`),
+    type: NonNull(ctx.getOutputType(`${typename}_mutation_response`)),
     args: {
       where: {
         type: ctx.getInputType(`${typename}_bool_exp`),
@@ -541,6 +542,25 @@ function generateMutation<RuntimeContext>(
       },
     },
     description: `delete data from the table: ${typename}`,
+    async resolve(_src, args, rt, info) {
+      const root = parseResolveInfo(args, info);
+      const [sql, parameters, doReturning = false] = buildDelete(
+        ctx.config,
+        typename,
+        table,
+        root
+      );
+      const { affected_rows, returning } = await ctx.trait.mutate(
+        rt,
+        sql,
+        parameters,
+        doReturning
+      );
+      return {
+        affected_rows,
+        returning: returning.map((x) => JSON.parse(x.value)),
+      };
+    },
   }));
   ctx.addMutation(table.root_fields?.update ?? `update_${typename}`, () => ({
     type: ctx.getOutputType(`${typename}_mutation_response`),

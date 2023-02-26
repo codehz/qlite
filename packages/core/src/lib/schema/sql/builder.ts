@@ -429,6 +429,31 @@ export function buildQueryByPk(
   return [sql, mapper.params.array];
 }
 
+export function buildDelete(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table);
+  let returning;
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      returning = mapper.selections(field.subfields);
+    }
+  }
+  const sql = [
+    fmt`DELETE %s`(mapper.from),
+    fmt`WHERE %s`(
+      mapper.where((root.arguments as { where: Record<string, unknown> }).where)
+    ),
+    trueMap(returning, fmt`RETURNING %s AS value`),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return [sql, mapper.params.array, !!returning];
+}
+
 export function buildDeleteByPk(
   config: QLiteConfig,
   typename: string,
@@ -468,7 +493,7 @@ export function buildUpdate(
   ]
     .filter(Boolean)
     .join(' ');
-  return [sql, mapper.params.array];
+  return [sql, mapper.params.array, !!returning];
 }
 
 export function buildUpdateByPk(
