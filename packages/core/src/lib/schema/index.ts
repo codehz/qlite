@@ -24,6 +24,7 @@ import { SchemaGeneratorContext, SQLiteTrait } from './context.js';
 import {
   buildDelete,
   buildDeleteByPk,
+  buildInsertOne,
   buildQuery,
   buildQueryAggregate,
   buildQueryByPk,
@@ -62,7 +63,7 @@ function dollerResolver(
   _ctx: unknown,
   info: GraphQLResolveInfo
 ) {
-  return obj['$' + info.path.key];
+  return obj[info.fieldName] ?? obj['$' + info.path.key];
 }
 
 function generateTables<RuntimeContext>(
@@ -532,6 +533,19 @@ function generateMutation<RuntimeContext>(
         },
       },
       description: `insert a single row into the table: ${typename}`,
+      async resolve(_src, args, rt, info) {
+        const root = parseResolveInfo(args, info);
+        const [sql, parameters] = buildInsertOne(
+          ctx.config,
+          typename,
+          table,
+          root
+        );
+        const item = (await ctx.trait.one(rt, sql, parameters)) as
+          | { value: string }
+          | undefined;
+        return item ? JSON.parse(item.value) : undefined;
+      },
     })
   );
   ctx.addMutation(table.root_fields?.delete ?? `delete_${typename}`, () => ({

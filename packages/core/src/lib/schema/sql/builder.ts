@@ -371,6 +371,46 @@ class SQLMapper {
     }
     return updates.join(', ');
   }
+
+  on_conflict(
+    conflicts: {
+      target?: {
+        columns: MaybeArray<string>;
+        where?: Record<string, unknown>;
+      };
+      update_columns: MaybeArray<string>;
+      where?: Record<string, unknown>;
+    }[]
+  ) {
+    const queue: string[] = [];
+    for (const { target, update_columns, where } of conflicts) {
+      queue.push('ON CONFLICT');
+      if (target) {
+        const columns = (normalizeInputArray(target.columns) ?? [])
+          .map((x) => this.table.columns[x].dbname ?? x)
+          .join(', ');
+        queue.push(fmt`(%s)`(columns));
+        if (target.where) {
+          queue.push(fmt`WHERE %s`(this.where(target.where)));
+        }
+      }
+      queue.push('DO');
+      const columns = normalizeInputArray(update_columns);
+      if (columns) {
+        queue.push('UPDATE SET');
+        queue.push(
+          columns
+            .map((x) => this.table.columns[x].dbname ?? x)
+            .map((x) => fmt`%q = excluded.%q`(x, x))
+            .join(', ')
+        );
+        if (where) queue.push(fmt`WHERE %s`(this.where(where)));
+      } else {
+        queue.push('NOTHING');
+      }
+    }
+    return queue.filter(Boolean).join(' ');
+  }
 }
 
 export type SQLQuery = [
@@ -520,6 +560,54 @@ export function buildDeleteByPk(
     mapper.by_pks(root.arguments),
     json
   );
+  return [sql, mapper.params.array];
+}
+
+export function buildInsertOne(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table);
+  const json = mapper.selections(root.subfields);
+  const args = root.arguments as {
+    object: Record<string, unknown>;
+    on_conflict: MaybeArray<{
+      target?: {
+        columns: MaybeArray<string>;
+        where?: Record<string, unknown>;
+      };
+      update_columns: MaybeArray<string>;
+      where?: Record<string, unknown>;
+    }>;
+  };
+  const column_template = [];
+  const values = [];
+  for (const [key, value] of Object.entries(args.object)) {
+    let resolved;
+    if ((resolved = mapper.table.columns[key])) {
+      const columnname = resolved.dbname ?? key;
+      column_template.push(columnname);
+      values.push(fmt`%?`(mapper.params.add(value)));
+    } else {
+      throw new Error('not implemented');
+    }
+  }
+  const sql = [
+    fmt`INSERT INTO %q`(mapper.tablename),
+    ...(column_template.length
+      ? [
+          fmt`(%s) VALUES (%s)`(column_template.join(', '), values.join(', ')),
+          trueMap(normalizeInputArray(args.on_conflict), (conflicts) =>
+            mapper.on_conflict(conflicts)
+          ),
+        ]
+      : ['DEFAULT VALUES']),
+    fmt`RETURNING %s as value`(json),
+  ]
+    .filter(Boolean)
+    .join(' ');
   return [sql, mapper.params.array];
 }
 
