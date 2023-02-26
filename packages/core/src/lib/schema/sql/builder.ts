@@ -324,7 +324,11 @@ class SQLMapper {
   }
 }
 
-export type SQLQuery = [sql: string, parameters: unknown[]];
+export type SQLQuery = [
+  sql: string,
+  parameters: unknown[],
+  returning?: boolean
+];
 
 export function buildQuery(
   config: QLiteConfig,
@@ -441,6 +445,32 @@ export function buildDeleteByPk(
   return [sql, mapper.params.array];
 }
 
+export function buildUpdate(
+  config: QLiteConfig,
+  typename: string,
+  table: QLiteTableConfig,
+  root: FieldInfo
+): SQLQuery {
+  const mapper = new SQLMapper(config, typename, table);
+  let returning;
+  for (const field of root.subfields) {
+    if (field.name === 'returning') {
+      returning = mapper.selections(field.subfields);
+    }
+  }
+  const sql = [
+    fmt`UPDATE %q`(mapper.tablename),
+    fmt`SET %s`(mapper.update(root.arguments)),
+    fmt`WHERE %s`(
+      mapper.where((root.arguments as { where: Record<string, unknown> }).where)
+    ),
+    trueMap(returning, fmt`RETURNING %s AS value`),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return [sql, mapper.params.array];
+}
+
 export function buildUpdateByPk(
   config: QLiteConfig,
   typename: string,
@@ -449,7 +479,7 @@ export function buildUpdateByPk(
 ): SQLQuery {
   const mapper = new SQLMapper(config, typename, table);
   const json = mapper.selections(root.subfields);
-  const sql = fmt`UPDATE %q SET %s WHERE %s RETURNING %s`(
+  const sql = fmt`UPDATE %q SET %s WHERE %s RETURNING %s as value`(
     mapper.tablename,
     mapper.update(root.arguments),
     mapper.by_pks(

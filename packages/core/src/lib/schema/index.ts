@@ -26,6 +26,7 @@ import {
   buildQuery,
   buildQueryAggregate,
   buildQueryByPk,
+  buildUpdate,
   buildUpdateByPk,
 } from './sql/builder.js';
 import {
@@ -550,6 +551,25 @@ function generateMutation<RuntimeContext>(
       },
     },
     description: `update data of the table: ${typename}`,
+    async resolve(_src, args, rt, info) {
+      const root = parseResolveInfo(args, info);
+      const [sql, parameters, doReturning = false] = buildUpdate(
+        ctx.config,
+        typename,
+        table,
+        root
+      );
+      const { affected_rows, returning } = await ctx.trait.mutate(
+        rt,
+        sql,
+        parameters,
+        doReturning
+      );
+      return {
+        affected_rows,
+        returning: returning.map((x) => JSON.parse(x.value)),
+      };
+    },
   }));
   ctx.addMutation(
     table.root_fields?.update_many ?? `update_${typename}_many`,
