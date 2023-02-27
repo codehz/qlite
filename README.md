@@ -4,14 +4,14 @@ A lightweight GraphQL server which use SQLite3 as data source.
 
 It will be deployable in Cloudflare Workers (WIP).
 
-You can define your SQLite3 schema in a single GraphQL schema file (or generate GraphQL schema from existing SQLite3 database).
+You can define your SQLite3 schema in a single YAML file (or generate YAML from existing SQLite3 database).
 
 ![**status: WIP!**](https://svg.hertz.services/text?content=Status:+WIP!&fontFamily=monospace&percent=0.9)
 
 ## Features
 
-1. Define SQLite3 schema in the GraphQL schema file.
-2. Generate GraphQL schema from existing SQLite Database.
+1. Define SQLite3 schema in the YAML file.
+2. Generate YAML file from existing SQLite Database (incomplete).
 3. Hasura-like query/mutation language (Subscriptions are planned), but not all features are supported, see [Limitations And Caveats](#limitions-and-caveats).
 4. "Environment" Independent Design, the core component doesn't even depend on any SQLite3 binding, so it can be ported to many js runtime environments (like Cloudflare Workers and Deno Deploy).
 
