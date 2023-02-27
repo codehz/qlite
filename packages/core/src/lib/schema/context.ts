@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { MaybePromise } from '@graphql-tools/utils';
 import {
   GraphQLFieldConfig,
   GraphQLNamedInputType,
@@ -10,6 +9,8 @@ import {
 } from 'graphql';
 import { QLiteConfig } from '../config.js';
 import { mapMap } from './utils.js';
+
+export type MaybePromise<T> = T | PromiseLike<T>;
 
 export type SQLiteTrait<Context> = {
   one(ctx: Context, sql: string, parameters: any[]): MaybePromise<any>;
@@ -22,10 +23,10 @@ export type SQLiteTrait<Context> = {
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }>;
   mutate_batch(
     ctx: Context,
-    tasks: ({
+    tasks: {
       sql: string;
       parameters: any[];
-    })[],
+    }[],
     returning: boolean
   ): MaybePromise<{ affected_rows: number; returning: Array<any> }[]>;
 };
