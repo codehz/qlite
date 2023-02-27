@@ -12,20 +12,17 @@ import {
   string,
 } from 'cmd-ts';
 import {
-  GraphQLFile,
   ReadOnlyDatabaseFile,
   OutputStream,
+  QLiteConfigFile,
 } from './lib/cli-helper.js';
 import { inferSchemaFromDatabase } from './lib/infer.js';
 import {
-  filterOutBuiltinDefinitions,
-  generateRootTypeDefs,
+  generateSchema,
   generateSqlInitialMigration,
 } from '@qlite/core';
-import { mergeSchemas } from '@graphql-tools/schema';
 import { printSchema } from 'graphql';
 import { serveHttp } from './lib/server.js';
-import { printSchemaWithDirectives } from '@graphql-tools/utils';
 
 const output = option({
   type: OutputStream,
@@ -37,7 +34,7 @@ const init = command({
   name: 'init',
   args: {
     input: positional({
-      type: GraphQLFile,
+      type: QLiteConfigFile,
     }),
     output,
   },
@@ -65,7 +62,7 @@ const generate = command({
   name: 'generate',
   args: {
     input: positional({
-      type: GraphQLFile,
+      type: QLiteConfigFile,
     }),
     output,
     stripDirectives: flag({
@@ -75,17 +72,8 @@ const generate = command({
     }),
   },
   handler(args) {
-    const typedefs = generateRootTypeDefs(args.input);
-    const schema = mergeSchemas({
-      schemas: [args.input],
-      typeDefs: [typedefs],
-    });
-    if (args.stripDirectives) {
-      const mapped = filterOutBuiltinDefinitions(schema);
-      args.output.write(printSchema(mapped) + '\n');
-    } else {
-      args.output.write(printSchemaWithDirectives(schema) + '\n');
-    }
+    const schema = generateSchema(args.input);
+    args.output.write(printSchema(schema));
   },
 });
 
@@ -93,7 +81,7 @@ const serve = command({
   name: 'serve',
   args: {
     input: positional({
-      type: GraphQLFile,
+      type: QLiteConfigFile,
     }),
     port: option({
       long: 'port',

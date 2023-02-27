@@ -1,4 +1,3 @@
-import { Path } from '@graphql-tools/utils';
 import {
   DirectiveNode,
   GraphQLResolveInfo,
@@ -110,7 +109,9 @@ export function resolveSelectionSet(
   );
 }
 
-function getAliasFromPath(path?: Path): string | undefined {
+function getAliasFromPath(
+  path?: GraphQLResolveInfo['path']
+): string | undefined {
   if (!path) return undefined;
   const prev = getAliasFromPath(path.prev);
   if (prev) return typeof path.key === 'string' ? prev + '.' + path.key : prev;
