@@ -6,10 +6,6 @@ export function generateSqlInitialMigration(config: QLiteConfig) {
   for (const [typename, table] of Object.entries(config.tables)) {
     const tablename = table.dbname ?? typename;
     const defs: string[] = [];
-    const primary_key_count = Object.values(table.columns).reduce(
-      (o, x) => (x.primary_key ? o + 1 : o),
-      0
-    );
     const pks: string[] = [];
     for (const [fieldname, column] of Object.entries(table.columns)) {
       const columnname = column.dbname ?? fieldname;
@@ -18,14 +14,14 @@ export function generateSqlInitialMigration(config: QLiteConfig) {
         resolveSqlType(column.type, column.not_null),
       ];
       if (column.primary_key) {
-        if (primary_key_count === 1) txt.push('PRIMARY KEY');
-        else pks.push(columnname);
+        pks.push(columnname);
       }
       if (column.default) {
         txt.push(`DEFAULT (${column.default})`);
       }
       defs.push(txt.join(' '));
     }
+    if (pks.length) defs.push(`PRIMARY KEY (${pks.join(', ')})`);
     output.push(`CREATE TABLE IF NOT EXISTS ${tablename} (`);
     output.push(
       defs
