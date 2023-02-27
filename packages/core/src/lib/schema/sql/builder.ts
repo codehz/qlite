@@ -206,6 +206,26 @@ class SQLMapper {
           l,
           this.params.add(normalizeInputArray(r) ?? [])
         ),
+      _contains: (l, r) =>
+        fmt`NOT EXISTS (WITH %s, %s %s)`(
+          fmt`"$src" AS (SELECT type,fullkey,(CASE type WHEN 'object' THEN '{}' WHEN 'array' THEN '[]' WHEN 'null' THEN 'null' ELSE value END) AS value FROM json_tree(%s))`(
+            l
+          ),
+          fmt`"$inp" AS (SELECT type,fullkey,(CASE type WHEN 'object' THEN '{}' WHEN 'array' THEN '[]' WHEN 'null' THEN 'null' ELSE value END) AS value FROM json_tree(%?))`(
+            this.params.add(r)
+          ),
+          `SELECT 1 FROM "$inp" LEFT JOIN "$src" ON "$src".fullkey = "$inp".fullkey WHERE "$src".type IS NULL OR "$src".type != "$inp".type OR "$src".value != "$inp".value`
+        ),
+      _contained_in: (l, r) =>
+        fmt`NOT EXISTS (WITH %s, %s %s)`(
+          fmt`"$src" AS (SELECT type,fullkey,(CASE type WHEN 'object' THEN '{}' WHEN 'array' THEN '[]' WHEN 'null' THEN 'null' ELSE value END) AS value FROM json_tree(%s))`(
+            l
+          ),
+          fmt`"$inp" AS (SELECT type,fullkey,(CASE type WHEN 'object' THEN '{}' WHEN 'array' THEN '[]' WHEN 'null' THEN 'null' ELSE value END) AS value FROM json_tree(%?))`(
+            this.params.add(r)
+          ),
+          `SELECT 1 FROM "$src" LEFT JOIN "$inp" ON "$src".fullkey = "$inp".fullkey WHERE "$inp".type IS NULL OR "$src".type != "$inp".type OR "$src".value != "$inp".value`
+        ),
     };
     let bin: string;
     let handler;
