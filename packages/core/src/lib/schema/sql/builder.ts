@@ -9,7 +9,7 @@ import {
   JsonSelections,
   MaybeArray,
   normalizeInputArray,
-  resolveSqlType,
+  resolveSqlCastType,
   SQLParameters,
   trueMap,
   trueMap2,
@@ -67,10 +67,32 @@ class SQLMapper {
     for (const field of fields) {
       let resolved;
       if ((resolved = this.table.columns[field.name])) {
-        json.add(
-          field.name,
-          fmt`%q.%q`(this.alias, resolved.dbname ?? field.name)
-        );
+        switch (resolved.type) {
+          case 'boolean':
+            json.add(
+              field.name,
+              fmt`json(iif(%q.%q, 'true', 'false'))`(
+                this.alias,
+                resolved.dbname ?? field.name
+              )
+            );
+            break;
+          case 'json':
+            json.add(
+              field.name,
+              fmt`json(%q.%q)`(this.alias, resolved.dbname ?? field.name)
+            );
+            break;
+          default:
+            json.add(
+              field.name,
+              fmt`CAST(%q.%q AS %s)`(
+                this.alias,
+                resolved.dbname ?? field.name,
+                resolveSqlCastType(resolved.type)
+              )
+            );
+        }
       } else if ((resolved = this.table.relations[field.name])) {
         const [submapper, where] = this.relation(field.name, resolved);
         const selections = submapper.selections(field.subfields);
@@ -180,7 +202,7 @@ class SQLMapper {
               : fmt`CAST(%s ->> %t AS %s)`(
                   l,
                   _path,
-                  resolveSqlType(key as QLitePrimitiveTypeName)
+                  resolveSqlCastType(key as QLitePrimitiveTypeName)
                 );
           queue.push(...this.#where_exprs(exp, value));
         }

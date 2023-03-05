@@ -24,6 +24,19 @@ export function fmt(
     });
 }
 
+export function resolveSqlCastType(input: QLitePrimitiveTypeName) {
+  const raw: Record<QLitePrimitiveTypeName, string> = {
+    boolean: 'INTEGER',
+    integer: 'INTEGER',
+    json: 'TEXT',
+    real: 'REAL',
+    text: 'TEXT',
+    timestamp: 'TEXT',
+    uuid: 'TEXT',
+  };
+  return raw[input]
+}
+
 export function resolveSqlType(
   input: QLitePrimitiveTypeName,
   not_null = false
